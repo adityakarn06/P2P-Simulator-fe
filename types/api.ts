@@ -56,9 +56,6 @@ export class ApiError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Pagination helpers
-// ---------------------------------------------------------------------------
 
 export interface PaginationParams {
   page?: number;
@@ -71,4 +68,9 @@ export interface PaginatedData<T> {
   page: number;
   limit: number;
   hasMore: boolean;
+}
+
+export interface CursorPaginatedData<T> {
+  items: T[];
+  nextCursor: string | null;
 }

@@ -1,6 +1,11 @@
 
-// Formats an integer amount in paise (minor units) to an INR string.
-export function formatCurrency(paise: number): string {
+/**
+ * Formats an integer amount in paise (minor units) to an INR string.
+ * 182000 → ₹1,820.00
+ *
+ * Money must remain integer paise until display — never use floats for arithmetic.
+ */
+export function formatCurrencyFromPaise(paise: number): string {
   const rupees = paise / 100;
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -9,6 +14,9 @@ export function formatCurrency(paise: number): string {
     maximumFractionDigits: 2,
   }).format(rupees);
 }
+
+/** Alias kept for backwards compatibility. Prefer formatCurrencyFromPaise. */
+export const formatCurrency = formatCurrencyFromPaise;
 
 // Formats paise as a compact string (e.g. ₹1.82L, ₹18.2K).
 export function formatCurrencyCompact(paise: number): string {
