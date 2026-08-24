@@ -13,6 +13,26 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@hugeicons/core-free-icons",
+              message:
+                "Import icons from @/lib/icons instead — this barrel re-exports ~6,000 modules and inflates dev memory.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["lib/icons.ts"],
+    rules: { "no-restricted-imports": "off" },
+  },
 ]);
 
 export default eslintConfig;

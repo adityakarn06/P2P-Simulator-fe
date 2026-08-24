@@ -27,7 +27,8 @@ import {
   HelpCircleIcon,
   ActivityIcon,
   CommandIcon,
-} from "@hugeicons/core-free-icons";
+  Alert01Icon,
+} from "@/lib/icons";
 
 const data = {
   user: {
@@ -55,6 +56,11 @@ const data = {
       title: "Invoices",
       url: "/invoices",
       icon: <HugeiconsIcon icon={Invoice01Icon} strokeWidth={2} />,
+    },
+    {
+      title: "Exceptions",
+      url: "/exceptions",
+      icon: <HugeiconsIcon icon={Alert01Icon} strokeWidth={2} />,
     },
   ],
   documents: [

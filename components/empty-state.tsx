@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { HugeiconsProps } from "@hugeicons/react";
-import { InboxIcon } from "@hugeicons/core-free-icons";
+import { InboxIcon } from "@/lib/icons";
 import type { ReactNode } from "react";
 
 interface EmptyStateProps {

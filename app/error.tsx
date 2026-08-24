@@ -15,7 +15,7 @@ import {
     Alert01Icon,
     RefreshIcon,
     Home01Icon
-} from "@hugeicons/core-free-icons";
+} from "@/lib/icons";
 import Link from "next/link";
 import { categorizeError } from "@/lib/errors";
 import { cn } from "@/lib/utils";

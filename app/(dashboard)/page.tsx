@@ -1,95 +1,251 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useRequisitions } from "@/hooks/use-requisitions";
+import { useExceptions } from "@/hooks/use-exceptions";
+import { useInvoices } from "@/hooks/use-invoices";
+import { usePurchaseOrders } from "@/hooks/use-purchase-orders";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
+import { DataTable, type AppColumnDef } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
+import { buttonVariants } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatRelativeTime } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
+import type { RequisitionListItem, Exception } from "@/types/models";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
 import {
   FileEditIcon,
   ShoppingCart01Icon,
   Invoice01Icon,
-  PackageIcon,
-} from "@hugeicons/core-free-icons";
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import type { Metadata } from "next";
+  Alert01Icon,
+  ArrowRight01Icon,
+  FileEditIcon as ReqIcon,
+} from "@/lib/icons";
 
-export const metadata: Metadata = {
-  title: "Dashboard",
-  description: "Procurement lifecycle simulator — manage requisitions, purchase orders, invoices and shipments end to end.",
-};
+// ── Stat card ────────────────────────────────────────────────────────────────
 
-const stages = [
+interface StatCardProps {
+  label: string;
+  value: number | undefined;
+  isLoading: boolean;
+  href: string;
+  icon: IconSvgElement;
+  iconClass: string;
+  highlight?: boolean;
+}
+
+function StatCard({ label, value, isLoading, href, icon, iconClass, highlight }: StatCardProps) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-accent/40",
+        highlight && "border-orange-200 bg-orange-50/50 dark:border-orange-900 dark:bg-orange-950/20"
+      )}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={cn("rounded-md p-1.5", iconClass)}>
+          <HugeiconsIcon icon={icon} className="size-4" />
+        </div>
+        <span className="text-sm text-muted-foreground truncate">{label}</span>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-5 w-8" />
+      ) : (
+        <span className={cn("text-sm font-semibold tabular-nums", highlight && "text-orange-700 dark:text-orange-400")}>
+          {value ?? "—"}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+// ── Recent requisitions columns ───────────────────────────────────────────────
+
+const reqColumns: AppColumnDef<RequisitionListItem>[] = [
   {
-    title: "Requisitions",
-    description: "Start a procurement via chat. The AI extracts requirements and finds the best supplier.",
-    icon: FileEditIcon,
-    href: "/requisitions",
-    color: "text-blue-500",
-    bg: "bg-blue-500/10",
+    accessorKey: "rawInput",
+    header: "Description",
+    cell: ({ row }) => (
+      <Link
+        href={`/requisitions/${row.original.id}`}
+        className="block max-w-xs truncate text-sm font-medium hover:underline"
+        title={row.original.rawInput}
+      >
+        {row.original.rawInput}
+      </Link>
+    ),
   },
   {
-    title: "Purchase Orders",
-    description: "Review, approve or reject auto-generated purchase orders once a supplier is selected.",
-    icon: ShoppingCart01Icon,
-    href: "/purchase-orders",
-    color: "text-violet-500",
-    bg: "bg-violet-500/10",
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
   },
   {
-    title: "Invoices",
-    description: "Upload supplier invoices. Gemini Vision extracts line items for three-way matching.",
-    icon: Invoice01Icon,
-    href: "/invoices",
-    color: "text-amber-500",
-    bg: "bg-amber-500/10",
+    accessorKey: "createdAt",
+    header: "Created",
+    cell: ({ row }) => (
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {formatRelativeTime(row.original.createdAt)}
+      </span>
+    ),
   },
   {
-    title: "Shipments",
-    description: "Track goods in transit and simulate delivery with a goods receipt.",
-    icon: PackageIcon,
-    href: "/shipments",
-    color: "text-emerald-500",
-    bg: "bg-emerald-500/10",
+    id: "actions",
+    cell: ({ row }) => (
+      <Link
+        href={`/requisitions/${row.original.id}`}
+        className={buttonVariants({ variant: "ghost", size: "sm" })}
+      >
+        <HugeiconsIcon icon={ArrowRight01Icon} className="size-3.5" />
+      </Link>
+    ),
   },
 ];
 
+// ── Open exceptions columns ───────────────────────────────────────────────────
+
+const excColumns: AppColumnDef<Exception>[] = [
+  {
+    accessorKey: "title",
+    header: "Exception",
+    cell: ({ row }) => (
+      <Link
+        href={`/exceptions`}
+        className="block max-w-xs truncate text-sm font-medium hover:underline"
+        title={row.original.title}
+      >
+        {row.original.title}
+      </Link>
+    ),
+  },
+  {
+    accessorKey: "severity",
+    header: "Severity",
+    cell: ({ row }) => <StatusBadge status={row.original.severity} />,
+  },
+  {
+    accessorKey: "createdAt",
+    header: "Raised",
+    cell: ({ row }) => (
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {formatRelativeTime(row.original.createdAt)}
+      </span>
+    ),
+  },
+];
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function DashboardPage() {
+  const router = useRouter();
+  const { data: reqs, isLoading: loadingReqs } = useRequisitions({ limit: 5 });
+  const { data: openExc, isLoading: loadingExc } = useExceptions({ status: "OPEN", limit: 5 });
+  const { data: pos, isLoading: loadingPos } = usePurchaseOrders({ limit: 1 });
+  const { data: invs, isLoading: loadingInvs } = useInvoices({ limit: 1 });
+
   return (
-    <div className="@container/main flex flex-1 flex-col gap-6 p-4 md:p-6">
-      {/* Hero */}
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">P2P Simulator</h1>
-        <p className="text-sm text-muted-foreground">
-          Simulate the full Procure-to-Pay lifecycle end to end.
-        </p>
+    <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 max-w-5xl">
+      <PageHeader
+        title="Dashboard"
+        description="Procure-to-Pay lifecycle overview."
+        actions={
+          <Link href="/requisitions/new" className={buttonVariants({ size: "sm" })}>
+            New Requisition
+          </Link>
+        }
+      />
+
+      {/* Stat strip */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <StatCard
+          label="Requisitions"
+          value={reqs?.items.length}
+          isLoading={loadingReqs}
+          href="/requisitions"
+          icon={FileEditIcon}
+          iconClass="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
+        />
+        <StatCard
+          label="Purchase Orders"
+          value={pos?.items.length}
+          isLoading={loadingPos}
+          href="/purchase-orders"
+          icon={ShoppingCart01Icon}
+          iconClass="bg-violet-100 text-violet-600 dark:bg-violet-900 dark:text-violet-300"
+        />
+        <StatCard
+          label="Invoices"
+          value={invs?.items.length}
+          isLoading={loadingInvs}
+          href="/invoices"
+          icon={Invoice01Icon}
+          iconClass="bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300"
+        />
+        <StatCard
+          label="Open Exceptions"
+          value={openExc?.items.length}
+          isLoading={loadingExc}
+          href="/exceptions"
+          icon={Alert01Icon}
+          iconClass="bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300"
+          highlight={(openExc?.items.length ?? 0) > 0}
+        />
       </div>
 
-      {/* Stage cards */}
-      <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-4">
-        {stages.map((stage) => (
-          <Card key={stage.href} className="group transition-shadow hover:shadow-md">
-            <CardHeader className="pb-2">
-              <div className={`mb-2 inline-flex size-10 items-center justify-center rounded-lg ${stage.bg}`}>
-                <HugeiconsIcon
-                  icon={stage.icon}
-                  className={`size-5 ${stage.color}`}
-                  strokeWidth={2}
-                />
-              </div>
-              <CardTitle className="text-base">{stage.title}</CardTitle>
-              <CardDescription className="text-xs leading-relaxed">
-                {stage.description}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Link href={stage.href} className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>Go to {stage.title}</Link>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Recent requisitions */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Recent Requisitions</h2>
+          <Link href="/requisitions" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            View all
+            <HugeiconsIcon icon={ArrowRight01Icon} className="ml-1 size-3.5" />
+          </Link>
+        </div>
+        <DataTable
+          columns={reqColumns}
+          data={reqs?.items ?? []}
+          isLoading={loadingReqs}
+          skeletonRows={5}
+          emptyState={
+            <EmptyState
+              title="No requisitions yet"
+              description="Start by creating your first procurement requisition."
+              className="py-8"
+              action={{
+                label: "New Requisition",
+                onClick: () => router.push("/requisitions/new"),
+                icon: ReqIcon,
+              }}
+            />
+          }
+        />
+      </section>
+
+      {/* Open exceptions */}
+      {(loadingExc || (openExc?.items.length ?? 0) > 0) && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-orange-700 dark:text-orange-400">
+              Open Exceptions
+            </h2>
+            <Link href="/exceptions" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              View all
+              <HugeiconsIcon icon={ArrowRight01Icon} className="ml-1 size-3.5" />
+            </Link>
+          </div>
+          <DataTable
+            columns={excColumns}
+            data={openExc?.items ?? []}
+            isLoading={loadingExc}
+            skeletonRows={3}
+          />
+        </section>
+      )}
     </div>
   );
 }

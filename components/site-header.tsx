@@ -19,9 +19,11 @@ const SEGMENT_LABELS: Record<string, string> = {
   "invoices": "Invoices",
   "shipments": "Shipments",
   "receipts": "Receipts",
+  "exceptions": "Exceptions",
   "activity": "Activity",
   "settings": "Settings",
   "help": "Help",
+  "new": "New",
 };
 
 function getLabel(segment: string): string {

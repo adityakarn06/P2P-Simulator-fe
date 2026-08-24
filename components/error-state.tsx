@@ -18,7 +18,7 @@ import {
   File01Icon,
   Cancel01Icon,
   RefreshIcon,
-} from "@hugeicons/core-free-icons";
+} from "@/lib/icons";
 
 const errorIconMap = {
   network: Wifi01Icon,
