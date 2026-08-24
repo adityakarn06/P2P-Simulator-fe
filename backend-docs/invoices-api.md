@@ -1,0 +1,217 @@
+# Invoices API Reference (Frontend)
+
+How a client uploads a supplier invoice and watches it get read. See `architecture/invoices.md` for
+the backend design, and `api-docs/receipts-api.md` for the stage that precedes this.
+
+Conventions (headers, envelope, error codes) are identical to the requisitions API — see
+`api-docs/requisitions-api.md`. Every request carries `x-organization-id`.
+
+## The stage in one picture
+
+```text
+POST /receipts/simulate       ──▶ PO RECEIVED
+        │
+        ▼
+POST /invoices                ──▶ 202, invoice UPLOADED   (multipart upload)
+        │
+        ▼  automatic — invoice worker, a few seconds
+GET /invoices/:id             ──▶ EXTRACTED   fields + items populated
+                              ──▶ FAILED      extraction gave up, see failureReason
+        │
+        ▼
+Three-way matching            (next stage — NOT IMPLEMENTED, see below)
+```
+
+The purchase order id comes from `GET /purchase-orders/:id` or from `requisition.purchaseOrder`.
+
+## POST /api/v1/invoices
+
+`multipart/form-data`, **not** JSON.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `file` | file | The invoice document. PDF, PNG or JPEG, max 10 MB. |
+| `purchaseOrderId` | text | The purchase order being invoiced. |
+
+```js
+const body = new FormData();
+body.append("file", fileInput.files[0]);
+body.append("purchaseOrderId", purchaseOrderId);
+
+await fetch("/api/v1/invoices", {
+  method: "POST",
+  headers: { "x-organization-id": orgId }, // do NOT set Content-Type — the browser adds the boundary
+  body,
+});
+```
+
+The purchase order must be `APPROVED`, `SHIPPED`, `RECEIVED` or `COMPLETED`. Uploading against a
+`DRAFT`, `PENDING_APPROVAL` or `REJECTED` order is a `409`.
+
+Response — `202 Accepted`. The document is stored and the extraction job is queued; **no OCR has
+happened yet**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "invoice": {
+      "id": "inv_abc123",
+      "purchaseOrderId": "po_xyz789",
+      "supplierId": "sup_techsource",
+      "status": "UPLOADED",
+      "fileUrl": "https://res.cloudinary.com/.../authenticated/...",
+      "fileMimeType": "application/pdf",
+      "fileSizeBytes": 48213,
+      "invoiceNumber": null,
+      "invoiceDate": null,
+      "supplierNameRaw": null,
+      "poNumberRaw": null,
+      "subtotalPaise": null,
+      "taxPaise": null,
+      "totalPaise": null,
+      "currency": null,
+      "extractedAt": null,
+      "extractionAttempts": 0,
+      "failureReason": null,
+      "createdAt": "2026-08-26T11:00:00.000Z",
+      "updatedAt": "2026-08-26T11:00:00.000Z",
+      "items": []
+    }
+  },
+  "error": null
+}
+```
+
+Every extracted field is `null` and `items` is empty at this point. Poll `GET /invoices/:id` until
+`status` leaves `UPLOADED`/`PROCESSING`.
+
+`fileUrl` is a **signed, expiring** Cloudinary URL — usable to show a preview, but don't persist it
+client-side or treat it as a permanent link.
+
+## `Invoice.status`
+
+| `status` | Meaning | What the client shows |
+| --- | --- | --- |
+| `UPLOADED` | Stored, extraction queued | spinner — transient |
+| `PROCESSING` | The worker is reading the document | spinner |
+| `EXTRACTED` | Fields and line items populated | render the invoice; matching is queued |
+| `FAILED` | Extraction gave up after 3 attempts | render `failureReason`; terminal, re-upload the document |
+| `MATCHING` `APPROVED` `EXCEPTION` `PAID` | Later stages | not reachable yet — matching is not built |
+
+`extractionAttempts` counts how many times the worker has tried, so a slow extraction can show
+"attempt 2 of 3" rather than an indefinite spinner.
+
+## GET /api/v1/invoices/:id
+
+The same invoice fields as the upload response, populated once extraction succeeds — but note the
+envelope shape differs: `POST /invoices` nests the invoice under `data.invoice`, while this endpoint
+returns it directly as `data`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "inv_abc123",
+    "purchaseOrderId": "po_xyz789",
+    "status": "EXTRACTED",
+    "invoiceNumber": "INV-2026-0042",
+    "invoiceDate": "2026-08-20T00:00:00.000Z",
+    "supplierNameRaw": "TechSource Distributors",
+    "poNumberRaw": "PO-20260824-ABC123",
+    "subtotalPaise": 18200000,
+    "taxPaise": 3276000,
+    "totalPaise": 21476000,
+    "currency": "INR",
+    "extractedAt": "2026-08-26T11:00:07.000Z",
+    "extractionAttempts": 1,
+    "failureReason": null,
+    "items": [
+      {
+        "id": "ii_1",
+        "lineNumber": 1,
+        "description": "Wireless Keyboard",
+        "quantity": 100,
+        "unitPricePaise": 182000,
+        "lineTotalPaise": 18200000,
+        "productId": null
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+An invoice belonging to another organization is a `404`.
+
+### Reading the extracted fields
+
+Money is integer paise, as everywhere else: `21476000` → `₹2,14,760.00`.
+
+The `*Raw` suffix on `supplierNameRaw` and `poNumberRaw` is meaningful — **these are what the
+document claims, not verified facts.** They are deliberately not reconciled against the purchase
+order at this stage; that comparison is three-way matching's job. Expect them to disagree sometimes,
+and don't render them as though the backend has confirmed them.
+
+Any field can be `null`: the extractor is instructed to return `null` rather than guess at something
+it cannot read. A `null` `totalPaise` is a legitimate outcome for a poor scan, not a bug. `items` can
+be an empty array if the document has no readable line-item table.
+
+`productId` on a line is always `null` today — matching invoice lines to catalogue products is part
+of the matching stage.
+
+## GET /api/v1/invoices
+
+Cursor-paginated list, newest first.
+
+| Query param | Default | Notes |
+| --- | --- | --- |
+| `status` | — | Any `Invoice.status` value |
+| `purchaseOrderId` | — | Invoices for one purchase order |
+| `limit` | `20` | Max `100` |
+| `cursor` | — | The `nextCursor` from the previous page |
+
+```json
+{
+  "success": true,
+  "data": { "items": [ { "id": "inv_abc123", "...": "" } ], "nextCursor": null },
+  "error": null
+}
+```
+
+`nextCursor` is `null` on the last page.
+
+## Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | No file, or sent under a field name other than `file`; missing `purchaseOrderId`; file over 10 MB; type other than PDF/PNG/JPEG; file contents don't match the declared type; empty file |
+| 404 | `NOT_FOUND` | Unknown purchase order or invoice, or one owned by another organization |
+| 409 | `INVALID_STATE` | Purchase order is `DRAFT`, `PENDING_APPROVAL` or `REJECTED` |
+| 503 | `DEPENDENCY_UNAVAILABLE` | Cloudinary unreachable during upload |
+
+The type check is on the file's actual bytes, not its declared `Content-Type` — renaming a `.txt` to
+`.pdf` is rejected with `400`.
+
+An extraction failure is **not** an HTTP error: the upload already returned `202`. It surfaces as
+`status: "FAILED"` with `failureReason` on the next poll.
+
+## Uploading a duplicate
+
+Uploading a second invoice for the same purchase order is accepted, and so is the same invoice
+number twice. Detecting that is a three-way match check (`DUPLICATE_INVOICE`), not an upload-time
+refusal — the duplicate is meant to be recorded and flagged, not silently rejected. Don't build UI
+that assumes one invoice per purchase order.
+
+## Not yet available
+
+- **Three-way matching does not run.** The worker queues a matching job after extraction, but nothing
+  consumes that queue yet, so an invoice rests at `EXTRACTED` forever. `MATCHING`, `APPROVED`,
+  `EXCEPTION` and `PAID` are unreachable today.
+- No `ThreeWayMatch` / `MatchCheck` endpoints, no payment endpoints.
+- `GET /exceptions` is still not built, so an `INVOICE_EXTRACTION_FAILED` exception is only visible
+  through the invoice's own `failureReason`.
+- No delete or re-upload endpoint. A `FAILED` invoice is re-tried by uploading the document again as
+  a new invoice.
+- No Socket.IO events — poll `GET /invoices/:id` roughly every second while `status` is `UPLOADED` or
+  `PROCESSING`.

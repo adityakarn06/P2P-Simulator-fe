@@ -1,0 +1,141 @@
+# Shipments and Goods Receipts API Reference (Frontend)
+
+How a client reads a shipment and simulates its delivery. See `architecture/goods-receipt.md` for
+the backend design, `api-docs/purchase-orders-api.md` for the stage that precedes this, and
+`api-docs/invoices-api.md` for the one that follows.
+
+Conventions (headers, envelope, error codes) are identical to the requisitions API — see
+`api-docs/requisitions-api.md`. Every request carries `x-organization-id`.
+
+## The stage in one picture
+
+```text
+POST /purchase-orders/:id/approve  ──▶ PO APPROVED + shipment IN_TRANSIT
+        │
+        ▼
+GET /shipments/:id                 ──▶ status IN_TRANSIT, goodsReceipt null
+        │
+        ▼
+POST /receipts/simulate            ──▶ shipment DELIVERED, PO RECEIVED, GoodsReceipt created
+        │
+        ▼
+POST /invoices                     (next stage — see invoices-api.md)
+```
+
+The shipment id comes from `GET /purchase-orders/:id`, which returns `{ purchaseOrder, shipment }`.
+
+## GET /api/v1/shipments/:id
+
+```json
+{
+  "success": true,
+  "data": {
+    "shipment": {
+      "id": "ship_123",
+      "purchaseOrderId": "po_xyz789",
+      "trackingNumber": "TRK-0000000ABCDEFG",
+      "carrier": null,
+      "status": "IN_TRANSIT",
+      "shippedAt": "2026-08-24T09:00:00.000Z",
+      "deliveredAt": null,
+      "expectedDeliveryDate": "2026-08-29T00:00:00.000Z",
+      "createdAt": "2026-08-24T09:00:00.000Z"
+    },
+    "goodsReceipt": null
+  },
+  "error": null
+}
+```
+
+`goodsReceipt` is `null` until the delivery is recorded, and then carries the same shape as the
+receipt returned below. A shipment belonging to another organization is a `404`.
+
+## POST /api/v1/receipts/simulate
+
+Simulated IoT: a delivery event the frontend triggers by hand. Two payload shapes are accepted,
+never both.
+
+Flat form — the single-line purchase orders the MVP generates:
+
+```json
+{ "shipmentId": "ship_123", "receivedQuantity": 98, "damagedQuantity": 2 }
+```
+
+Explicit form — any purchase order, and the shape a real IoT integration would post:
+
+```json
+{
+  "shipmentId": "ship_123",
+  "items": [
+    { "purchaseOrderItemId": "poi_1", "receivedQuantity": 98, "damagedQuantity": 2 }
+  ],
+  "receivedBy": "Warehouse 2",
+  "notes": "Two units crushed in transit"
+}
+```
+
+`damagedQuantity` defaults to `0`. A line omitted from `items[]` is recorded as nothing received.
+`receivedBy` and `notes` are optional on both forms.
+
+Response — `201` on the first call, `200` on a replay:
+
+```json
+{
+  "success": true,
+  "data": {
+    "shipment": { "id": "ship_123", "status": "DELIVERED", "deliveredAt": "2026-08-26T10:00:00.000Z", "...": "" },
+    "goodsReceipt": {
+      "id": "gr_456",
+      "purchaseOrderId": "po_xyz789",
+      "shipmentId": "ship_123",
+      "status": "PARTIAL",
+      "receivedAt": "2026-08-26T10:00:00.000Z",
+      "receivedBy": "dev-user",
+      "notes": null,
+      "createdAt": "2026-08-26T10:00:00.000Z",
+      "items": [
+        {
+          "id": "ri_1",
+          "purchaseOrderItemId": "poi_1",
+          "productId": "prod_kb",
+          "orderedQuantity": 100,
+          "receivedQuantity": 98,
+          "damagedQuantity": 2,
+          "acceptedQuantity": 96
+        }
+      ]
+    },
+    "purchaseOrder": { "id": "po_xyz789", "status": "RECEIVED", "...": "" }
+  },
+  "error": null
+}
+```
+
+### Quantities
+
+- `receivedQuantity` — units that physically arrived, damaged ones included.
+- `damagedQuantity` — the subset of those that cannot be accepted.
+- `acceptedQuantity` = `receivedQuantity - damagedQuantity`. **This is the number three-way matching
+  compares against the invoice.** Show it as "accepted" in the UI; an invoice for more than this is
+  what produces a `QUANTITY_MISMATCH` exception at the matching stage.
+
+`status` is `COMPLETED` only when every line was accepted in full; a short delivery or any damage
+makes it `PARTIAL`. A partial receipt is not an error and does not block the workflow — matching
+decides what it costs.
+
+### Idempotency
+
+Re-posting the **same** delivery returns the receipt already on file with `200` and writes nothing. A
+shipment can only ever carry one receipt, and a receipt is immutable: re-posting the same
+`shipmentId` with *different* quantities is refused with `409 CONFLICT` rather than silently
+answering `200` with the stored numbers. There is no correction endpoint — a wrong receipt is a
+matching exception for a human to resolve.
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Both payload shapes at once; nothing received; damaged > received; received > ordered; flat form on a multi-line purchase order; unknown or repeated `purchaseOrderItemId` |
+| 404 | `NOT_FOUND` | Unknown shipment, or one owned by another organization |
+| 409 | `INVALID_STATE` | Shipment still `CREATED`; purchase order not `APPROVED`/`SHIPPED`; shipment `DELIVERED` with no receipt (corrupt state, reported rather than repaired) |
+| 409 | `CONFLICT` | A concurrent delivery claimed the shipment first, or a replay reported quantities different from the receipt on file (`details` carries `recorded` vs `submitted`) |
