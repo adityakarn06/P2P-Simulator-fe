@@ -1,11 +1,7 @@
-"use client"
+"use client";
 
-import * as React from "react"
-
-import { NavDocuments } from "@/components/nav-documents"
-import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
-import { NavUser } from "@/components/nav-user"
+import * as React from "react";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
@@ -14,154 +10,84 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { DashboardSquare01Icon, Menu01Icon, ChartHistogramIcon, Folder01Icon, UserGroupIcon, Camera01Icon, File01Icon, Settings05Icon, HelpCircleIcon, SearchIcon, Database01Icon, Analytics01Icon, CommandIcon } from "@hugeicons/core-free-icons"
+} from "@/components/ui/sidebar";
+import { NavMain } from "@/components/nav-main";
+import { NavDocuments } from "@/components/nav-documents";
+import { NavSecondary } from "@/components/nav-secondary";
+import { NavUser } from "@/components/nav-user";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  DashboardSquare01Icon,
+  FileEditIcon,
+  ShoppingCart01Icon,
+  Invoice01Icon,
+  PackageIcon,
+  ReceiptIcon,
+  Settings05Icon,
+  HelpCircleIcon,
+  ActivityIcon,
+  CommandIcon,
+} from "@hugeicons/core-free-icons";
 
 const data = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
+    name: "P2P Admin",
+    email: "admin@cognizant.com",
+    avatar: "",
   },
   navMain: [
     {
       title: "Dashboard",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={2} />
-      ),
+      url: "/",
+      icon: <HugeiconsIcon icon={DashboardSquare01Icon} strokeWidth={2} />,
     },
     {
-      title: "Lifecycle",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={Menu01Icon} strokeWidth={2} />
-      ),
+      title: "Requisitions",
+      url: "/requisitions",
+      icon: <HugeiconsIcon icon={FileEditIcon} strokeWidth={2} />,
     },
     {
-      title: "Analytics",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={ChartHistogramIcon} strokeWidth={2} />
-      ),
+      title: "Purchase Orders",
+      url: "/purchase-orders",
+      icon: <HugeiconsIcon icon={ShoppingCart01Icon} strokeWidth={2} />,
     },
     {
-      title: "Projects",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={Folder01Icon} strokeWidth={2} />
-      ),
-    },
-    {
-      title: "Team",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} />
-      ),
+      title: "Invoices",
+      url: "/invoices",
+      icon: <HugeiconsIcon icon={Invoice01Icon} strokeWidth={2} />,
     },
   ],
-  navClouds: [
+  documents: [
     {
-      title: "Capture",
-      icon: (
-        <HugeiconsIcon icon={Camera01Icon} strokeWidth={2} />
-      ),
-      isActive: true,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      name: "Shipments",
+      url: "/shipments",
+      icon: <HugeiconsIcon icon={PackageIcon} strokeWidth={2} />,
     },
     {
-      title: "Proposal",
-      icon: (
-        <HugeiconsIcon icon={File01Icon} strokeWidth={2} />
-      ),
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      name: "Receipts",
+      url: "/receipts",
+      icon: <HugeiconsIcon icon={ReceiptIcon} strokeWidth={2} />,
     },
     {
-      title: "Prompts",
-      icon: (
-        <HugeiconsIcon icon={File01Icon} strokeWidth={2} />
-      ),
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      name: "Activity",
+      url: "/activity",
+      icon: <HugeiconsIcon icon={ActivityIcon} strokeWidth={2} />,
     },
   ],
   navSecondary: [
     {
       title: "Settings",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />
-      ),
+      url: "/settings",
+      icon: <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />,
     },
     {
-      title: "Get Help",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={HelpCircleIcon} strokeWidth={2} />
-      ),
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={SearchIcon} strokeWidth={2} />
-      ),
+      title: "Help",
+      url: "/help",
+      icon: <HugeiconsIcon icon={HelpCircleIcon} strokeWidth={2} />,
     },
   ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
-      ),
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={Analytics01Icon} strokeWidth={2} />
-      ),
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: (
-        <HugeiconsIcon icon={File01Icon} strokeWidth={2} />
-      ),
-    },
-  ],
-}
+};
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -170,22 +96,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
-              render={<a href="#" />}
+              render={<Link href="/" />}
             >
               <HugeiconsIcon icon={CommandIcon} strokeWidth={2} className="size-5!" />
-              <span className="text-base font-semibold">Acme Inc.</span>
+              <span className="text-base font-semibold">P2P Simulator</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
+
       <SidebarFooter>
         <NavUser user={data.user} />
       </SidebarFooter>
     </Sidebar>
-  )
+  );
 }
