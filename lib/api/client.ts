@@ -29,8 +29,18 @@ async function request<T>(
 
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
+  // For FormData, strip any caller-provided Content-Type (case-insensitive) so
+  // the browser can set it with the correct multipart boundary.
+  const extraHeaders: Record<string, string> = isFormData
+    ? Object.fromEntries(
+        Object.entries(options.headers ?? {}).filter(
+          ([k]) => k.toLowerCase() !== "content-type"
+        )
+      )
+    : (options.headers ?? {});
+
   const headers: Record<string, string> = {
-    ...buildHeaders(options.headers),
+    ...buildHeaders(extraHeaders),
     // Only set Content-Type for JSON — FormData must NOT have it set manually
     ...(body !== undefined && !isFormData
       ? { "Content-Type": "application/json" }
@@ -52,6 +62,11 @@ async function request<T>(
   try {
     res = await fetch(url, init);
   } catch (err) {
+    // Preserve abort/cancellation errors so callers using AbortController can
+    // detect cancellation via error.name === "AbortError".
+    if (options.signal?.aborted) {
+      throw err;
+    }
     throw new ApiError(
       "Network request failed. Check your connection.",
       "NETWORK_ERROR",

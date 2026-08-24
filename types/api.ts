@@ -37,10 +37,11 @@ export class ApiError extends Error {
   }
 
   get isRetryable(): boolean {
+    const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
     return (
       this.code === "DEPENDENCY_UNAVAILABLE" ||
       this.code === "INTERNAL_ERROR" ||
-      (this.status !== undefined && this.status >= 500)
+      (this.status !== undefined && TRANSIENT_STATUSES.has(this.status))
     );
   }
 

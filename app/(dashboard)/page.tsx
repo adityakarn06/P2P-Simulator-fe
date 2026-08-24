@@ -17,7 +17,7 @@ import {
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Dashboard — P2P Simulator",
+  title: "Dashboard",
   description: "Procurement lifecycle simulator — manage requisitions, purchase orders, invoices and shipments end to end.",
 };
 
