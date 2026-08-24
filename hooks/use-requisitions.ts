@@ -96,6 +96,10 @@ export function useSendRequisitionMessage() {
       queryClient.invalidateQueries({
         queryKey: requisitionKeys.detail(variables.id),
       });
+      // requisitionKeys.detail() is deliberately not nested under .all, so
+      // the list's status/turnCount/updatedAt columns need an explicit
+      // invalidation too.
+      queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
     },
   });
 }

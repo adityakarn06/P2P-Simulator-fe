@@ -100,6 +100,15 @@ function StopIcon() {
   );
 }
 
+function SpinnerIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="animate-spin">
+      <circle cx="7" cy="7" r="5.25" stroke="currentColor" strokeWidth="1.75" strokeOpacity="0.25" />
+      <path d="M12.25 7a5.25 5.25 0 0 0-5.25-5.25" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -304,6 +313,24 @@ export interface PromptInputProps {
   value?: string;
   onChange?: (value: string) => void;
   maxAttachments?: number;
+  /** Locks the composer entirely — textarea, send, mic, attach, model/effort pickers. */
+  disabled?: boolean;
+  /** Shows a spinner on the send button and makes submit a no-op while true. */
+  isPending?: boolean;
+  /** Show the model picker. Default true (unchanged demo behaviour). */
+  showModelSelect?: boolean;
+  /** Show the effort cycle button. Default true (unchanged demo behaviour). */
+  showEffort?: boolean;
+  /** Show the mic / voice-input control. Default true (unchanged demo behaviour). */
+  showVoice?: boolean;
+  /** Show the attach-image control. Default true (unchanged demo behaviour). */
+  showAttachments?: boolean;
+  /** When set, enforces a max character count and shows a counter. */
+  maxLength?: number;
+  /** Expand and focus the composer on mount. */
+  autoFocus?: boolean;
+  /** Fills the parent's width instead of the default 320/480px hero sizing. */
+  fullWidth?: boolean;
 }
 
 export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
@@ -318,10 +345,19 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       value: controlledValue,
       onChange,
       maxAttachments = 6,
+      disabled = false,
+      isPending = false,
+      showModelSelect = true,
+      showEffort = true,
+      showVoice = true,
+      showAttachments = true,
+      maxLength,
+      autoFocus = false,
+      fullWidth = false,
     },
     ref
   ) => {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(autoFocus && !disabled);
     const [isSmoothResize, setIsSmoothResize] = useState(false);
     const [localValue, setLocalValue] = useState(defaultValue);
     const [selectedModel, setSelectedModel] = useState(models[0]);
@@ -386,6 +422,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     }, [isControlled, onChange]);
 
     const expand = () => {
+      if (disabled) return;
       setIsSmoothResize(false);
       setExpanded(true);
     };
@@ -621,6 +658,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     };
 
     const handleSubmit = () => {
+      if (disabled || isPending) return;
       if (value.trim() === "" && !hasAttachments) return;
       setIsSmoothResize(false);
       onSubmit?.(value, { model: selectedModel, effort: efforts[effortIndex], attachments: attachments.map((a) => a.file) });
@@ -633,11 +671,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const cycleEffort = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (disabled) return;
       setEffortIndex((prev) => (prev + 1) % efforts.length);
     };
 
     const openFileChooser = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (disabled) return;
       fileInputRef.current?.click();
     };
 
@@ -677,17 +717,18 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     };
 
     // Calculate action button states
-    const showArrow = hasValue && !isRecording;
+    const showMic = !hasValue && !isRecording && showVoice && !disabled;
     const showStop = isRecording;
-    const showMic = !hasValue && !isRecording;
+    const showArrow = !showStop && !showMic;
 
     const onActionButtonClick = (e: React.MouseEvent) => {
       e.preventDefault();
+      if (disabled || isPending) return;
       if (isRecording) {
         stopRecording();
       } else if (hasValue) {
         handleSubmit();
-      } else {
+      } else if (showVoice) {
         startRecording();
       }
     };
@@ -705,7 +746,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           onBlur={handleBlur}
           className={cn("relative flex flex-col w-full", className)}
           style={{
-            maxWidth: expanded ? 480 : 320,
+            maxWidth: fullWidth ? "100%" : expanded ? 480 : 320,
             transition: isSmoothResize ? "max-width 0.15s ease-out" : "max-width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
           }}
         >
@@ -763,7 +804,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           <div
             onMouseDown={(e) => {
               const isTextarea = e.target === textareaRef.current;
-              if (expanded && !isTextarea && !isRecording) {
+              if (expanded && !isTextarea && !isRecording && !disabled) {
                 e.preventDefault();
                 textareaRef.current?.focus();
               }
@@ -776,7 +817,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             }}
             className={cn(
               "relative w-full border border-border bg-card shadow-sm focus-within:border-ring/40 focus-within:ring-1 focus-within:ring-ring/20 hover:border-border/80 z-10",
-              expanded ? "cursor-text" : "cursor-default"
+              expanded ? "cursor-text" : "cursor-default",
+              disabled && "opacity-60 hover:border-border cursor-not-allowed"
             )}
           >
             <style dangerouslySetInnerHTML={{ __html: `
@@ -804,7 +846,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               }}
               placeholder={placeholder}
               aria-label="Prompt"
-              disabled={isRecording}
+              disabled={isRecording || disabled}
+              maxLength={maxLength}
               style={{
                 transition: isSmoothResize
                   ? "height 0.15s ease-out"
@@ -846,12 +889,14 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             </button>
 
             {/* Bottom Actions Wrapper - Hides when recording to make space for visualizer */}
+            {(showModelSelect || showEffort || showAttachments) && (
             <div
               className={cn(
                 "absolute bottom-2 left-3 right-12 z-[10] flex items-center gap-0 transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]",
-                expanded && !isRecording ? "opacity-100 blur-0 translate-y-0 pointer-events-auto" : "opacity-0 blur-sm translate-y-2 pointer-events-none"
+                expanded && !isRecording && !disabled ? "opacity-100 blur-0 translate-y-0 pointer-events-auto" : "opacity-0 blur-sm translate-y-2 pointer-events-none"
               )}
             >
+              {showModelSelect && (
               <div className="relative">
                 <button
                   type="button"
@@ -911,7 +956,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                   </div>
                 </div>
               </div>
+              )}
 
+              {showEffort && (
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={cycleEffort}
                 className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default"
@@ -919,14 +966,18 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 <DynamicBarsIcon level={efforts[effortIndex]} />
                 <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={efforts[effortIndex]} /></span>
               </button>
+              )}
 
+              {showAttachments && (
               <button
-                type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={attachments.length >= maxAttachments}
+                type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={disabled || attachments.length >= maxAttachments}
                 className="ml-auto flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default disabled:opacity-40 disabled:pointer-events-none"
               >
                 <PlusIcon />
               </button>
+              )}
             </div>
+            )}
 
             {/* Audio Wave Visualizer Overlay positioned precisely to the left of the mic button */}
             <div
@@ -948,12 +999,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               type="button"
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onClick={onActionButtonClick}
-              aria-label={showArrow ? "Send prompt" : showStop ? "Stop recording" : "Use voice input"}
+              disabled={disabled || (isPending && !isRecording) || (showArrow && !hasValue)}
+              aria-label={isPending ? "Sending" : showArrow ? "Send prompt" : showStop ? "Stop recording" : "Use voice input"}
               style={{ borderRadius: 9999 }}
-              className="absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default"
+              className="absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-40 disabled:pointer-events-none"
             >
               <span className="relative flex h-full w-full items-center justify-center">
-                <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showArrow ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
+                <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showArrow && !isPending ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
                   <ArrowUpIcon />
                 </span>
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showMic ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 -rotate-45 blur-[1px] pointer-events-none")}>
@@ -962,8 +1014,23 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showStop ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
                   <StopIcon />
                 </span>
+                <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", isPending ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
+                  <SpinnerIcon />
+                </span>
               </span>
             </button>
+
+            {maxLength !== undefined && (
+              <span
+                className={cn(
+                  "absolute bottom-2 left-3 z-[10] text-[10px] tabular-nums text-muted-foreground/70 transition-opacity duration-300",
+                  expanded && !isRecording ? "opacity-100" : "opacity-0 pointer-events-none"
+                )}
+                aria-hidden="true"
+              >
+                {value.length}/{maxLength}
+              </span>
+            )}
           </div>
         </div>
 
