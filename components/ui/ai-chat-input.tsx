@@ -416,7 +416,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const [isScrolling, setIsScrolling] = useState(false);
 
     const isControlled = controlledValue !== undefined;
-    const value = isControlled ? controlledValue : localValue;
+    const rawValue = isControlled ? controlledValue : localValue;
+    const value = maxLength !== undefined ? rawValue.slice(0, maxLength) : rawValue;
     const hasValue = value.trim() !== "" || attachments.length > 0;
     const hasAttachments = attachments.length > 0;
     // Pure function of textareaHeight — no need for its own state/effect.
@@ -528,7 +529,17 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
         // Setup Web Audio API for visualizer
         const AudioCtx =
           window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) {
+          console.warn("Web Audio API not supported in this browser. Using simulated visualizer.");
+          stream.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+          demoIntervalRef.current = window.setInterval(() => {
+            setAudioData(Array.from({ length: 5 }, () => Math.random() * 0.8 + 0.1));
+          }, 100);
+          simulateText();
+          return;
+        }
         const audioCtx = new AudioCtx();
         audioContextRef.current = audioCtx;
 
