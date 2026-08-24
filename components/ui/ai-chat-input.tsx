@@ -540,31 +540,46 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           simulateText();
           return;
         }
-        const audioCtx = new AudioCtx();
-        audioContextRef.current = audioCtx;
+        try {
+          const audioCtx = new AudioCtx();
+          audioContextRef.current = audioCtx;
 
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64;
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-        const updateVisualizer = () => {
-          analyser.getByteFrequencyData(dataArray);
-          const bands = new Array(5).fill(0);
-          const step = Math.floor(dataArray.length / 5);
-          for (let i = 0; i < 5; i++) {
-            let sum = 0;
-            for (let j = 0; j < step; j++) {
-              sum += dataArray[i * step + j];
+          const updateVisualizer = () => {
+            analyser.getByteFrequencyData(dataArray);
+            const bands = new Array(5).fill(0);
+            const step = Math.floor(dataArray.length / 5);
+            for (let i = 0; i < 5; i++) {
+              let sum = 0;
+              for (let j = 0; j < step; j++) {
+                sum += dataArray[i * step + j];
+              }
+              bands[i] = sum / step / 255; // normalize to 0-1
             }
-            bands[i] = sum / step / 255; // normalize to 0-1
+            setAudioData(bands);
+            rafRef.current = requestAnimationFrame(updateVisualizer);
+          };
+          updateVisualizer();
+        } catch (err) {
+          console.warn("Web Audio API initialization failed. Using simulated visualizer.", err);
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
           }
-          setAudioData(bands);
-          rafRef.current = requestAnimationFrame(updateVisualizer);
-        };
-        updateVisualizer();
+          stream.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+          demoIntervalRef.current = window.setInterval(() => {
+            setAudioData(Array.from({ length: 5 }, () => Math.random() * 0.8 + 0.1));
+          }, 100);
+          simulateText();
+          return;
+        }
 
         // Setup Speech Recognition
         const SpeechRecognition = (
