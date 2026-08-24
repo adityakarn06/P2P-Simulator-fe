@@ -30,6 +30,7 @@ import {
   SLOW_POLL_NOTICE_MS,
   missingFieldLabel,
   deriveWorkflowStages,
+  formatDeliveryDeadline,
 } from "@/features/requisitions/lib/requisition-state";
 import type {
   RequisitionStatus,
@@ -389,6 +390,19 @@ describe("deriveWorkflowStages", () => {
     assert.equal(stages[1].status, "failed");
     assert.equal(stages[1].note, "No eligible suppliers found.");
     assert.equal(stages[2].status, "pending");
+  });
+});
+
+describe("formatDeliveryDeadline", () => {
+  test("renders the deadline's calendar date regardless of client-local timezone", () => {
+    // 2026-08-31T23:30:00Z + 1 day = 2026-09-01T23:30Z. In UTC-11 local time
+    // that instant is still 2026-09-01 — a local-timezone format would wrongly
+    // print "1 Sep" or "31 Aug" depending on the host's offset.
+    assert.equal(formatDeliveryDeadline(1, "2026-08-31T23:30:00.000Z"), "1 day (by 01 Sept)");
+  });
+
+  test("pluralizes and computes the deadline date for a multi-day count", () => {
+    assert.equal(formatDeliveryDeadline(7, "2026-08-17T00:00:00.000Z"), "7 days (by 24 Aug)");
   });
 });
 

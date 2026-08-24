@@ -97,9 +97,11 @@ export function missingFieldLabel(field: string): string {
 export function formatDeliveryDeadline(days: number, fromIso: string): string {
   const from = new Date(fromIso);
   const deadline = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
-  const dateStr = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(
-    deadline
-  );
+  const dateStr = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  }).format(deadline);
   const label = days === 1 ? "1 day" : `${days} days`;
   return `${label} (by ${dateStr})`;
 }
