@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/purchase-orders";
 import type { PurchaseOrder } from "@/types/models";
 import type { CursorPaginatedData } from "@/types/api";
+import { requisitionKeys } from "@/hooks/use-requisitions";
 
 export const purchaseOrderKeys = {
   all: ["purchase-orders"] as const,
@@ -65,25 +66,39 @@ export function usePurchaseOrders(
 
 /**
  * Approves a purchase order. Idempotent.
- * Invalidates both the specific PO detail and the full list.
+ * Invalidates the PO detail + list, and — when called with a
+ * `requisitionId` (e.g. from /requisitions/[id]) — the owning requisition's
+ * detail query too, since `requisitionKeys.detail(id)` lives outside the
+ * `requisitionKeys.all` namespace and is never reached by a broader
+ * invalidation.
  */
 export function useApprovePurchaseOrder() {
   const queryClient = useQueryClient();
 
-  return useMutation<PurchaseOrderWithShipment, Error, string>({
-    mutationFn: (id) => approvePurchaseOrder(id),
-    onSuccess: (_data, id) => {
+  return useMutation<
+    PurchaseOrderWithShipment,
+    Error,
+    { id: string; requisitionId?: string }
+  >({
+    mutationFn: ({ id }) => approvePurchaseOrder(id),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: purchaseOrderKeys.detail(id),
+        queryKey: purchaseOrderKeys.detail(variables.id),
       });
       queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
+      if (variables.requisitionId) {
+        queryClient.invalidateQueries({
+          queryKey: requisitionKeys.detail(variables.requisitionId),
+        });
+        queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+      }
     },
   });
 }
 
 /**
  * Rejects a purchase order with a required reason. Idempotent.
- * Invalidates both the specific PO detail and the full list.
+ * Same invalidation shape as useApprovePurchaseOrder — see its comment.
  */
 export function useRejectPurchaseOrder() {
   const queryClient = useQueryClient();
@@ -91,7 +106,7 @@ export function useRejectPurchaseOrder() {
   return useMutation<
     PurchaseOrderWithShipment,
     Error,
-    { id: string } & RejectPurchaseOrderBody
+    { id: string; requisitionId?: string } & RejectPurchaseOrderBody
   >({
     mutationFn: ({ id, reason }) => rejectPurchaseOrder(id, { reason }),
     onSuccess: (_data, variables) => {
@@ -99,6 +114,12 @@ export function useRejectPurchaseOrder() {
         queryKey: purchaseOrderKeys.detail(variables.id),
       });
       queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
+      if (variables.requisitionId) {
+        queryClient.invalidateQueries({
+          queryKey: requisitionKeys.detail(variables.requisitionId),
+        });
+        queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+      }
     },
   });
 }

@@ -34,18 +34,18 @@ export function isComposerEnabled(
 
 /**
  * Poll interval (ms) for GET /requisitions/:id, or `false` to stop polling.
- * Faster while an extraction turn is running (CREATED/PROCESSING); slower
- * while a downstream worker (sourcing, PO generation) is running; stopped
- * whenever the requisition is actionable or terminal.
+ * Per backend-docs/README.md ("Polling, not sockets") and sourcing-api.md
+ * ("Poll every ~1s"), every automatic/worker-driven transition — extraction,
+ * sourcing, PO generation — is observed at ~1s. Stopped whenever the
+ * requisition is actionable by the user or terminal.
  */
 export function getPollInterval(status: RequisitionStatus): number | false {
   switch (status) {
     case "CREATED":
     case "PROCESSING":
-      return 2000;
     case "REQUIREMENTS_EXTRACTED":
     case "SUPPLIER_SELECTED":
-      return 4000;
+      return 1000;
     case "NEEDS_CLARIFICATION":
     case "PO_CREATED":
     case "FAILED":
@@ -53,6 +53,29 @@ export function getPollInterval(status: RequisitionStatus): number | false {
     default:
       return false;
   }
+}
+
+/** True while GET /requisitions/:id is being polled for this status. */
+export function isPolling(status: RequisitionStatus): boolean {
+  return getPollInterval(status) !== false;
+}
+
+/** After this long polling the same status, show a "still working" notice instead of an error. */
+export const SLOW_POLL_NOTICE_MS = 30_000;
+
+/**
+ * True once a polling status has been showing for >= SLOW_POLL_NOTICE_MS.
+ * Never treat this as a failure — the backend job retries on its own; this
+ * is purely a "haven't heard back yet" UI state (see backend-docs/README.md,
+ * "give up after ~30s with a 'still working' state rather than an error").
+ */
+export function shouldShowSlowNotice(
+  pollingSinceMs: number,
+  nowMs: number,
+  status: RequisitionStatus
+): boolean {
+  if (!isPolling(status)) return false;
+  return nowMs - pollingSinceMs >= SLOW_POLL_NOTICE_MS;
 }
 
 const MISSING_FIELD_LABELS: Record<string, string> = {
@@ -81,13 +104,28 @@ export function formatDeliveryDeadline(days: number, fromIso: string): string {
   return `${label} (by ${dateStr})`;
 }
 
-type StageId = "request" | "requirements" | "sourcing" | "purchase-order";
+type StageId =
+  | "request"
+  | "requirements"
+  | "sourcing"
+  | "purchase-order"
+  | "shipment"
+  | "goods-receipt"
+  | "invoice"
+  | "matching"
+  | "payment";
 
 /**
  * Maps real requisition state to WorkflowStage[] for WorkflowTimeline.
  * Only ever marks a stage "completed" from the presence of a real backend
  * object (`requirement`, `sourcing`, `purchaseOrder`) — never from the
  * status string alone.
+ *
+ * Shipment/goods-receipt derive from `purchaseOrder.status`, which IS
+ * embedded on the requisition — the requisition's own `status` never
+ * advances past PO_CREATED (backend-docs/README.md). Invoice/matching/
+ * payment are tracked on the invoice, which this screen does not fetch, so
+ * they stay "pending" rather than faking a completed stage.
  */
 export function deriveWorkflowStages(
   req: Pick<
@@ -95,7 +133,14 @@ export function deriveWorkflowStages(
     "status" | "requirement" | "sourcing" | "purchaseOrder" | "failureReason" | "createdAt"
   >
 ): WorkflowStage[] {
-  const stages: WorkflowStage[] = [
+  const po = req.purchaseOrder;
+  const poStatus = po?.status ?? null;
+  const poRejected = poStatus === "REJECTED";
+
+  const shipmentCompleted = poStatus === "RECEIVED" || poStatus === "COMPLETED";
+  const shipmentActive = poStatus === "APPROVED" || poStatus === "SHIPPED";
+
+  const stages: (WorkflowStage & { id: StageId })[] = [
     {
       id: "request",
       label: "Request",
@@ -105,11 +150,7 @@ export function deriveWorkflowStages(
     {
       id: "requirements",
       label: "Requirements",
-      status: req.requirement != null
-        ? "completed"
-        : req.status === "FAILED"
-          ? "pending"
-          : "active",
+      status: req.requirement != null ? "completed" : "active",
     },
     {
       id: "sourcing",
@@ -123,15 +164,46 @@ export function deriveWorkflowStages(
     {
       id: "purchase-order",
       label: "Purchase Order",
-      status: req.purchaseOrder != null
-        ? "completed"
-        : req.status === "SUPPLIER_SELECTED"
-          ? "active"
-          : "pending",
+      status: poRejected
+        ? "failed"
+        : po != null
+          ? "completed"
+          : req.status === "SUPPLIER_SELECTED"
+            ? "active"
+            : "pending",
+      note: poRejected ? po?.rejectionReason ?? "Purchase order rejected." : null,
+    },
+    {
+      id: "shipment",
+      label: "Shipment",
+      status: shipmentCompleted ? "completed" : shipmentActive ? "active" : "pending",
+    },
+    {
+      id: "goods-receipt",
+      label: "Goods Receipt",
+      status: shipmentCompleted ? "completed" : "pending",
+    },
+    {
+      id: "invoice",
+      label: "Invoice",
+      status: "pending",
+      note: "Tracked on the invoice, not shown here yet.",
+    },
+    {
+      id: "matching",
+      label: "Matching",
+      status: "pending",
+      note: "Tracked on the invoice, not shown here yet.",
+    },
+    {
+      id: "payment",
+      label: "Payment",
+      status: "pending",
+      note: "Tracked on the invoice, not shown here yet.",
     },
   ];
 
-  if (req.status === "FAILED") {
+  if (req.status === "FAILED" && !poRejected) {
     const firstIncomplete = stages.find((s) => s.status !== "completed");
     if (firstIncomplete) {
       firstIncomplete.status = "failed";

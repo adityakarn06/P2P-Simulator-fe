@@ -11,7 +11,7 @@ is `/api/v1` (e.g. `POST /api/v1/requisitions`).
 | 3. Purchase order | [`purchase-orders-api.md`](./purchase-orders-api.md) | `POST /purchase-orders/:id/approve`, `POST /purchase-orders/:id/reject`, `GET /purchase-orders/:id`, `GET /purchase-orders` |
 | 4. Shipment & goods receipt | [`receipts-api.md`](./receipts-api.md) | `GET /shipments/:id`, `POST /receipts/simulate` |
 | 5. Invoice upload & extraction | [`invoices-api.md`](./invoices-api.md) | `POST /invoices`, `GET /invoices/:id`, `GET /invoices` |
-| 6. Matching, payment, exceptions | **not implemented yet** | see [Not yet available](#not-yet-available) |
+| 6. Matching, payment, exceptions | [`exceptions-api.md`](./exceptions-api.md) | `GET /exceptions`, `GET /exceptions/:id`, `POST /exceptions/:id/resolve` |
 
 ## The whole flow, end to end
 
@@ -44,8 +44,16 @@ is `/api/v1` (e.g. `POST /api/v1/requisitions`).
                          └─▶ EXTRACTED     fields + line items populated
                          └─▶ FAILED        extraction gave up (terminal)
         │
-        ▼
-6. Match → Pay           NOT IMPLEMENTED — see below
+        ▼ automatic — matching worker (deterministic, no AI)
+                         GET /invoices/:id        poll until status leaves MATCHING
+                         └─▶ APPROVED      match passed → automatic payment queued
+                         └─▶ EXCEPTION     mismatch → see GET /exceptions?entityId={invoiceId}
+        │
+        ├─▶ automatic — payment worker      APPROVED ──▶ PAID
+        │
+        └─▶ POST /exceptions/:id/resolve   human override
+                         └─▶ releasedForPayment: true when it was the last open exception
+                                 → EXCEPTION → APPROVED → automatic payment → PAID
 ```
 
 Every stage after the initial `POST /requisitions` call is either:
@@ -97,9 +105,10 @@ from it:
 | `PO_CREATED` | Purchase order generated | render `purchaseOrder` (see purchase-orders doc); may still be `PENDING_APPROVAL`, `APPROVED`, or later |
 | `FAILED` | Terminal failure at any stage | render `failureReason`; start a new requisition — this one no longer accepts messages |
 
-Note the requisition's `status` does **not** advance past `PO_CREATED` for shipment/receipt — those
-are tracked on `purchaseOrder.status` and the `shipment`/`goodsReceipt` objects instead. Keep
-watching those once you're in `PO_CREATED`.
+Note the requisition's `status` does **not** advance past `PO_CREATED` for shipment/receipt, invoice,
+matching or payment — those are tracked on `purchaseOrder.status`, the `shipment`/`goodsReceipt`
+objects, and `Invoice.status` (`GET /invoices/:id`) instead. Keep watching those once you're in
+`PO_CREATED`.
 
 ## Suggested frontend build order
 
@@ -113,19 +122,22 @@ watching those once you're in `PO_CREATED`.
 5. **Invoice upload.** A file picker posting `multipart/form-data` to `/invoices`, then a poll on
    `GET /invoices/:id` until `status` is `EXTRACTED` or `FAILED` — the same poll-and-reveal pattern
    as step 2. On `FAILED`, stop polling and surface `failureReason` instead of retrying the poll.
-6. Stop here until matching/payment/exceptions ship — see below.
+6. **Keep polling `GET /invoices/:id` past `EXTRACTED`.** Matching and payment run automatically —
+   `status` moves to `APPROVED` (clean match, payment queued) or `EXCEPTION` (mismatch) on its own.
+7. **Exceptions screen.** `GET /exceptions?entityId={invoiceId}&status=OPEN` whenever an invoice is
+   `EXCEPTION`, with an approve/reject form posting to `/exceptions/:id/resolve`. See
+   `exceptions-api.md` for the full contract, including how `releasedForPayment` works and why one
+   invoice can carry more than one open exception.
 
 ## Not yet available
 
 Do not build against these — they will 404 or don't exist:
 
-- Three-way matching, `ThreeWayMatch`/`MatchCheck` endpoints. Invoice extraction *is* built, but
-  the matching queue has no consumer, so an invoice rests at `EXTRACTED` and never reaches
-  `MATCHING`/`APPROVED`/`PAID`
-- Payments (`Payment` is simulated but has no worker/queue consumer wired up yet)
-- `GET /exceptions`, `GET /exceptions/:id`, `POST /exceptions/:id/resolve` — `NO_SUPPLIER_FOUND` and
-  `INVOICE_EXTRACTION_FAILED` exception rows are written today, but they're only reachable via
-  `requisition.failureReason` / `invoice.failureReason`, not a dedicated endpoint
+- `GET /payments`, `GET /payments/:id` — a payment's progress is only visible indirectly through
+  `Invoice.status` (`APPROVED` → processing, `PAID` → settled)
+- A read endpoint for `ThreeWayMatch`/`MatchCheck` — only the *failed* checks behind an open exception
+  are exposed, via `exception.metadata.checks`; a passing match's full 12-check breakdown isn't
+  fetchable anywhere
 - `GET /suppliers`, `GET /suppliers/:id`
 - `GET /audit-logs`
 - Socket.IO realtime events — polling is the only mechanism today

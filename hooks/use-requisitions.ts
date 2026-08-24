@@ -92,14 +92,17 @@ export function useSendRequisitionMessage() {
   >({
     mutationFn: ({ id, input }) =>
       sendRequisitionMessage(id, { input }),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: requisitionKeys.detail(variables.id),
-      });
-      // requisitionKeys.detail() is deliberately not nested under .all, so
-      // the list's status/turnCount/updatedAt columns need an explicit
-      // invalidation too.
-      queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
-    },
+    onSuccess: (_data, variables) =>
+      // Returned so the mutation stays pending until the refetched detail is
+      // in cache — callers rely on isPending spanning the whole round trip.
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: requisitionKeys.detail(variables.id),
+        }),
+        // requisitionKeys.detail() is deliberately not nested under .all, so
+        // the list's status/turnCount/updatedAt columns need an explicit
+        // invalidation too.
+        queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() }),
+      ]),
   });
 }

@@ -18,8 +18,12 @@ POST /invoices                ──▶ 202, invoice UPLOADED   (multipart uploa
 GET /invoices/:id             ──▶ EXTRACTED   fields + items populated
                               ──▶ FAILED      extraction gave up, see failureReason
         │
+        ▼  automatic — matching worker (deterministic, no AI)
+GET /invoices/:id             ──▶ APPROVED    match passed → payment queued automatically
+                              ──▶ EXCEPTION   mismatch → see api-docs/exceptions-api.md
+        │
         ▼
-Three-way matching            (next stage — NOT IMPLEMENTED, see below)
+Payment / Exception resolution  (see api-docs/exceptions-api.md)
 ```
 
 The purchase order id comes from `GET /purchase-orders/:id` or from `requisition.purchaseOrder`.
@@ -97,7 +101,10 @@ client-side or treat it as a permanent link.
 | `PROCESSING` | The worker is reading the document | spinner |
 | `EXTRACTED` | Fields and line items populated | render the invoice; matching is queued |
 | `FAILED` | Extraction gave up after 3 attempts | render `failureReason`; terminal, re-upload the document |
-| `MATCHING` `APPROVED` `EXCEPTION` `PAID` | Later stages | not reachable yet — matching is not built |
+| `MATCHING` | Three-way matching running | spinner — transient, usually resolves quickly (no AI call in this stage) |
+| `APPROVED` | Match passed, or a human overrode a mismatch | payment is queued automatically |
+| `EXCEPTION` | Match failed | fetch `GET /exceptions?entityId={invoiceId}` — see `api-docs/exceptions-api.md` |
+| `PAID` | Settled | terminal, success state |
 
 `extractionAttempts` counts how many times the worker has tried, so a slow extraction can show
 "attempt 2 of 3" rather than an indefinite spinner.
@@ -205,13 +212,12 @@ that assumes one invoice per purchase order.
 
 ## Not yet available
 
-- **Three-way matching does not run.** The worker queues a matching job after extraction, but nothing
-  consumes that queue yet, so an invoice rests at `EXTRACTED` forever. `MATCHING`, `APPROVED`,
-  `EXCEPTION` and `PAID` are unreachable today.
-- No `ThreeWayMatch` / `MatchCheck` endpoints, no payment endpoints.
-- `GET /exceptions` is still not built, so an `INVOICE_EXTRACTION_FAILED` exception is only visible
-  through the invoice's own `failureReason`.
+- No `ThreeWayMatch` / `MatchCheck` read endpoint — a passing match's full 12-check breakdown isn't
+  fetchable anywhere; only a *failing* check surfaces, via the resulting exception's `metadata.checks`
+  (see `api-docs/exceptions-api.md`).
+- No `GET /payments` / `GET /payments/:id` — a payment's progress is only visible indirectly through
+  `Invoice.status`.
 - No delete or re-upload endpoint. A `FAILED` invoice is re-tried by uploading the document again as
   a new invoice.
-- No Socket.IO events — poll `GET /invoices/:id` roughly every second while `status` is `UPLOADED` or
-  `PROCESSING`.
+- No Socket.IO events — poll `GET /invoices/:id` roughly every second while `status` is `UPLOADED`,
+  `PROCESSING`, or `MATCHING`.

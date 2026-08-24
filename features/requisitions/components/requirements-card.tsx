@@ -12,7 +12,11 @@ import type { Requirement } from "@/types/models";
 
 interface RequirementsCardProps {
   requirement: Requirement;
-  /** ISO 8601 — the requisition's createdAt, used as the deadline anchor. */
+  /**
+   * ISO 8601 — anchor for the delivery deadline. `deliveryDeadlineDays` is
+   * "days from now" as of extraction, so this should be the extraction
+   * turn's timestamp (the last message), not the requisition's createdAt.
+   */
   sinceIso: string;
   className?: string;
 }

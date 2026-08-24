@@ -1,16 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { z } from "zod";
 import { PromptInput } from "@/components/ui/ai-chat-input";
 import { InlineError } from "@/components/error-state";
 import { isRetryable } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
-
-const inputSchema = z.string().trim().min(1, "Message can't be empty.").max(
-  2000,
-  "Message must be 2000 characters or fewer."
-);
 
 interface RequisitionComposerProps {
   placeholder: string;
@@ -33,7 +27,6 @@ export function RequisitionComposer({
   autoFocus = false,
 }: RequisitionComposerProps) {
   const [text, setText] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
   const lastSubmittedRef = useRef("");
   const lastErrorRef = useRef<unknown>(undefined);
 
@@ -47,15 +40,9 @@ export function RequisitionComposer({
   }, [error]);
 
   const handleSubmit = (value: string) => {
-    const result = inputSchema.safeParse(value);
-    if (!result.success) {
-      setValidationError(result.error.issues[0]?.message ?? "Invalid input.");
-      setText(value);
-      return;
-    }
-    setValidationError(null);
-    lastSubmittedRef.current = result.data;
-    onSend(result.data);
+    const trimmed = value.trim();
+    lastSubmittedRef.current = trimmed;
+    onSend(trimmed);
   };
 
   return (
@@ -63,10 +50,7 @@ export function RequisitionComposer({
       <PromptInput
         placeholder={placeholder}
         value={text}
-        onChange={(value) => {
-          setText(value);
-          if (validationError) setValidationError(null);
-        }}
+        onChange={setText}
         onSubmit={(value) => handleSubmit(value)}
         disabled={disabled}
         isPending={isPending}
@@ -79,9 +63,7 @@ export function RequisitionComposer({
         fullWidth
       />
 
-      {validationError && <InlineError error={new Error(validationError)} />}
-
-      {error != null && !validationError && (
+      {error != null && (
         <div className="flex items-center justify-between gap-2">
           <InlineError error={error} />
           {onRetry && isRetryable(error) && (

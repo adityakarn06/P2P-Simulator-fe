@@ -579,13 +579,19 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       }
     }, [value, isRecording]);
 
-    // Ensure cleanup of mic/streams on unmount
+    // Ensure cleanup of mic/streams on unmount only — read attachments
+    // through a ref so this doesn't re-run (and revoke live object URLs)
+    // on every add/remove.
+    const attachmentsRef = useRef(attachments);
+    useEffect(() => {
+      attachmentsRef.current = attachments;
+    }, [attachments]);
     useEffect(() => {
       return () => {
         stopRecording();
-        attachments.forEach((a) => URL.revokeObjectURL(a.url));
+        attachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.url));
       };
-    }, [stopRecording, attachments]);
+    }, [stopRecording]);
 
 
     useEffect(() => {

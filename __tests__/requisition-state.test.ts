@@ -1,12 +1,14 @@
 /**
  * Requisition intake state-derivation tests
  *
- * Runner: node --test (no Vitest — matches package.json "test" script, no
- * path-alias resolution under --experimental-strip-types).
+ * Runner: node --test (no Vitest — matches package.json "test" script).
+ * `@/` imports are resolved by __tests__/alias-loader.mjs, registered via
+ * `--import` in the "test" script.
  *
- * Mirrors the pure logic in features/requisitions/lib/requisition-state.ts —
- * inlined here (same convention as __tests__/api-layer.test.ts) so this file
- * needs no `@/` imports.
+ * Exercises the real module at features/requisitions/lib/requisition-state.ts
+ * directly — no inlined copies. `isChatResultComplete` below is the one
+ * intentional exception: it tests the raw POST-response payload shape
+ * (`RequisitionChatResult`), not the module.
  *
  * Coverage:
  *   - isExtractionComplete / the completion trap (status stays "PROCESSING"
@@ -19,25 +21,22 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-
-type RequisitionStatus =
-  | "CREATED"
-  | "PROCESSING"
-  | "NEEDS_CLARIFICATION"
-  | "REQUIREMENTS_EXTRACTED"
-  | "SUPPLIER_SELECTED"
-  | "PO_CREATED"
-  | "FAILED";
-
-interface Requirement {
-  productName: string;
-  quantity: number;
-  maxUnitPricePaise: number;
-  currency: string;
-  deliveryDeadlineDays: number;
-  deliveryLocation: string | null;
-  specifications: Record<string, unknown>;
-}
+import {
+  isExtractionComplete,
+  isComposerEnabled,
+  getPollInterval,
+  isPolling,
+  shouldShowSlowNotice,
+  SLOW_POLL_NOTICE_MS,
+  missingFieldLabel,
+  deriveWorkflowStages,
+} from "@/features/requisitions/lib/requisition-state";
+import type {
+  RequisitionStatus,
+  Requirement,
+  Sourcing,
+  PurchaseOrder,
+} from "@/types/models";
 
 interface RequisitionChatResult {
   status: "NEEDS_CLARIFICATION" | "PROCESSING" | "REQUIREMENTS_EXTRACTED";
@@ -48,124 +47,12 @@ interface RequisitionChatResult {
   requirements?: Requirement | null;
 }
 
-// Mirror of features/requisitions/lib/requisition-state.ts isExtractionComplete
-function isExtractionComplete(req: { requirement: Requirement | null }): boolean {
-  return req.requirement != null;
-}
-
-// Mirror of the same function's usage against the raw chat-result payload
+// Tests the raw POST-response payload shape, not the module — see header.
 function isChatResultComplete(result: RequisitionChatResult): boolean {
   return result.requirements != null;
 }
 
-// Mirror of isComposerEnabled
-function isComposerEnabled(req: {
-  status: RequisitionStatus;
-  requirement: Requirement | null;
-}): boolean {
-  if (isExtractionComplete(req)) return false;
-  return req.status === "NEEDS_CLARIFICATION";
-}
-
-// Mirror of getPollInterval
-function getPollInterval(status: RequisitionStatus): number | false {
-  switch (status) {
-    case "CREATED":
-    case "PROCESSING":
-      return 2000;
-    case "REQUIREMENTS_EXTRACTED":
-    case "SUPPLIER_SELECTED":
-      return 4000;
-    case "NEEDS_CLARIFICATION":
-    case "PO_CREATED":
-    case "FAILED":
-      return false;
-    default:
-      return false;
-  }
-}
-
-// Mirror of missingFieldLabel (inline formatStatus, identical to lib/formatters.ts)
-function formatStatus(status: string): string {
-  return status
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-const MISSING_FIELD_LABELS: Record<string, string> = {
-  productName: "Product",
-  quantity: "Quantity",
-  maxUnitPricePaise: "Maximum Unit Price",
-  currency: "Currency",
-  deliveryDays: "Delivery Deadline",
-  location: "Location",
-  specifications: "Specifications",
-};
-
-function missingFieldLabel(field: string): string {
-  return MISSING_FIELD_LABELS[field] ?? formatStatus(field);
-}
-
-// Mirror of deriveWorkflowStages
-interface Stage {
-  id: string;
-  label: string;
-  status: "completed" | "active" | "pending" | "failed";
-  note?: string | null;
-}
-
-function deriveWorkflowStages(req: {
-  status: RequisitionStatus;
-  requirement: Requirement | null;
-  sourcing: { decidedAt: string } | null;
-  purchaseOrder: { id: string } | null;
-  failureReason: string | null;
-}): Stage[] {
-  const stages: Stage[] = [
-    { id: "request", label: "Request", status: "completed" },
-    {
-      id: "requirements",
-      label: "Requirements",
-      status:
-        req.requirement != null
-          ? "completed"
-          : req.status === "FAILED"
-            ? "pending"
-            : "active",
-    },
-    {
-      id: "sourcing",
-      label: "Supplier Discovery",
-      status:
-        req.sourcing != null
-          ? "completed"
-          : req.status === "REQUIREMENTS_EXTRACTED"
-            ? "active"
-            : "pending",
-    },
-    {
-      id: "purchase-order",
-      label: "Purchase Order",
-      status:
-        req.purchaseOrder != null
-          ? "completed"
-          : req.status === "SUPPLIER_SELECTED"
-            ? "active"
-            : "pending",
-    },
-  ];
-
-  if (req.status === "FAILED") {
-    const firstIncomplete = stages.find((s) => s.status !== "completed");
-    if (firstIncomplete) {
-      firstIncomplete.status = "failed";
-      firstIncomplete.note = req.failureReason ?? "This step failed.";
-    }
-  }
-
-  return stages;
-}
+const CREATED_AT = "2026-08-17T00:00:00.000Z";
 
 // ---------------------------------------------------------------------------
 
@@ -228,26 +115,77 @@ describe("isExtractionComplete / completion trap", () => {
 });
 
 describe("getPollInterval", () => {
-  test("CREATED polls fast", () => {
-    assert.equal(getPollInterval("CREATED"), 2000);
+  test("CREATED polls at ~1s", () => {
+    assert.equal(getPollInterval("CREATED"), 1000);
   });
-  test("PROCESSING polls fast", () => {
-    assert.equal(getPollInterval("PROCESSING"), 2000);
+  test("PROCESSING polls at ~1s", () => {
+    assert.equal(getPollInterval("PROCESSING"), 1000);
   });
   test("NEEDS_CLARIFICATION does not poll — actionable", () => {
     assert.equal(getPollInterval("NEEDS_CLARIFICATION"), false);
   });
-  test("REQUIREMENTS_EXTRACTED polls slower — sourcing running", () => {
-    assert.equal(getPollInterval("REQUIREMENTS_EXTRACTED"), 4000);
+  test("REQUIREMENTS_EXTRACTED polls at ~1s — sourcing running", () => {
+    assert.equal(getPollInterval("REQUIREMENTS_EXTRACTED"), 1000);
   });
-  test("SUPPLIER_SELECTED polls slower — PO generation running", () => {
-    assert.equal(getPollInterval("SUPPLIER_SELECTED"), 4000);
+  test("SUPPLIER_SELECTED polls at ~1s — PO generation running", () => {
+    assert.equal(getPollInterval("SUPPLIER_SELECTED"), 1000);
   });
   test("PO_CREATED is terminal — no poll", () => {
     assert.equal(getPollInterval("PO_CREATED"), false);
   });
   test("FAILED is terminal — no poll", () => {
     assert.equal(getPollInterval("FAILED"), false);
+  });
+});
+
+describe("isPolling", () => {
+  test("true for every working status", () => {
+    const statuses: RequisitionStatus[] = [
+      "CREATED",
+      "PROCESSING",
+      "REQUIREMENTS_EXTRACTED",
+      "SUPPLIER_SELECTED",
+    ];
+    for (const status of statuses) {
+      assert.equal(isPolling(status), true, status);
+    }
+  });
+
+  test("false for every resting status", () => {
+    const statuses: RequisitionStatus[] = ["NEEDS_CLARIFICATION", "PO_CREATED", "FAILED"];
+    for (const status of statuses) {
+      assert.equal(isPolling(status), false, status);
+    }
+  });
+});
+
+describe("shouldShowSlowNotice", () => {
+  test("false just under the threshold", () => {
+    assert.equal(
+      shouldShowSlowNotice(0, SLOW_POLL_NOTICE_MS - 1, "PROCESSING"),
+      false
+    );
+  });
+
+  test("true at the threshold", () => {
+    assert.equal(
+      shouldShowSlowNotice(0, SLOW_POLL_NOTICE_MS, "PROCESSING"),
+      true
+    );
+  });
+
+  test("true well past the threshold", () => {
+    assert.equal(
+      shouldShowSlowNotice(0, SLOW_POLL_NOTICE_MS * 2, "REQUIREMENTS_EXTRACTED"),
+      true
+    );
+  });
+
+  test("false when the status isn't a polling status, no matter the elapsed time", () => {
+    assert.equal(
+      shouldShowSlowNotice(0, SLOW_POLL_NOTICE_MS * 2, "PO_CREATED"),
+      false
+    );
   });
 });
 
@@ -298,6 +236,7 @@ describe("deriveWorkflowStages", () => {
       sourcing: null,
       purchaseOrder: null,
       failureReason: null,
+      createdAt: CREATED_AT,
     });
     assert.equal(stages[0].status, "completed");
     assert.equal(stages[1].status, "active");
@@ -321,12 +260,13 @@ describe("deriveWorkflowStages", () => {
       sourcing: null,
       purchaseOrder: null,
       failureReason: null,
+      createdAt: CREATED_AT,
     });
     assert.equal(stages[1].status, "completed");
     assert.equal(stages[2].status, "active");
   });
 
-  test("PO_CREATED: all four stages completed", () => {
+  test("PO_CREATED, PENDING_APPROVAL: first four stages completed, shipment/goods-receipt still pending", () => {
     const requirement: Requirement = {
       productName: "wireless keyboard",
       quantity: 100,
@@ -339,12 +279,100 @@ describe("deriveWorkflowStages", () => {
     const stages = deriveWorkflowStages({
       status: "PO_CREATED",
       requirement,
-      sourcing: { decidedAt: "2026-08-24T00:00:00.000Z" },
-      purchaseOrder: { id: "po_1" },
+      sourcing: { decidedAt: "2026-08-24T00:00:00.000Z" } as Sourcing,
+      purchaseOrder: { id: "po_1", status: "PENDING_APPROVAL" } as PurchaseOrder,
       failureReason: null,
+      createdAt: CREATED_AT,
     });
-    for (const stage of stages) {
+    for (const stage of stages.slice(0, 4)) {
       assert.equal(stage.status, "completed", stage.id);
+    }
+    const shipment = stages.find((s) => s.id === "shipment")!;
+    const goodsReceipt = stages.find((s) => s.id === "goods-receipt")!;
+    assert.equal(shipment.status, "pending");
+    assert.equal(goodsReceipt.status, "pending");
+  });
+
+  test("nine stages, in order", () => {
+    const stages = deriveWorkflowStages({
+      status: "CREATED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: null,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    assert.deepEqual(
+      stages.map((s) => s.id),
+      [
+        "request",
+        "requirements",
+        "sourcing",
+        "purchase-order",
+        "shipment",
+        "goods-receipt",
+        "invoice",
+        "matching",
+        "payment",
+      ]
+    );
+  });
+
+  test("PO APPROVED: shipment active, goods-receipt still pending", () => {
+    const stages = deriveWorkflowStages({
+      status: "PO_CREATED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: { id: "po_1", status: "APPROVED" } as PurchaseOrder,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    assert.equal(stages.find((s) => s.id === "shipment")!.status, "active");
+    assert.equal(stages.find((s) => s.id === "goods-receipt")!.status, "pending");
+  });
+
+  test("PO RECEIVED: shipment and goods-receipt both completed", () => {
+    const stages = deriveWorkflowStages({
+      status: "PO_CREATED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: { id: "po_1", status: "RECEIVED" } as PurchaseOrder,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    assert.equal(stages.find((s) => s.id === "shipment")!.status, "completed");
+    assert.equal(stages.find((s) => s.id === "goods-receipt")!.status, "completed");
+  });
+
+  test("PO REJECTED: purchase-order stage fails with the rejection reason, independent of req.status", () => {
+    const stages = deriveWorkflowStages({
+      status: "FAILED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: {
+        id: "po_1",
+        status: "REJECTED",
+        rejectionReason: "Budget exceeded.",
+      } as PurchaseOrder,
+      failureReason: "Purchase order rejected: Budget exceeded.",
+      createdAt: CREATED_AT,
+    });
+    const poStage = stages.find((s) => s.id === "purchase-order")!;
+    assert.equal(poStage.status, "failed");
+    assert.equal(poStage.note, "Budget exceeded.");
+  });
+
+  test("invoice/matching/payment stay pending even once PO_CREATED", () => {
+    const stages = deriveWorkflowStages({
+      status: "PO_CREATED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    for (const id of ["invoice", "matching", "payment"] as const) {
+      assert.equal(stages.find((s) => s.id === id)!.status, "pending", id);
     }
   });
 
@@ -355,6 +383,7 @@ describe("deriveWorkflowStages", () => {
       sourcing: null,
       purchaseOrder: null,
       failureReason: "No eligible suppliers found.",
+      createdAt: CREATED_AT,
     });
     assert.equal(stages[0].status, "completed");
     assert.equal(stages[1].status, "failed");
