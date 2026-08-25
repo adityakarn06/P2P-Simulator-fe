@@ -56,10 +56,14 @@ function ResolveActions({ exception }: { exception: Exception }) {
     mutate(
       { id: exception.id, decision: pendingDecision, reason },
       {
-        onSuccess: () => {
-          toast.success(
-            pendingDecision === "APPROVE" ? "Exception approved" : "Exception rejected"
-          );
+        onSuccess: (data) => {
+          if (data.releasedForPayment) {
+            toast.success("Exception approved — payment released");
+          } else {
+            toast.success(
+              pendingDecision === "APPROVE" ? "Exception approved" : "Exception rejected"
+            );
+          }
           setPendingDecision(null);
         },
         onError: (e) => {

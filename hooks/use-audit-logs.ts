@@ -58,6 +58,8 @@ export function useInfiniteAuditLogs(
   filters: ListAuditLogsParams = {},
   options?: UseInfiniteAuditLogsOptions
 ) {
+  const { cursor: _cursor, ...pagedFilters } = filters;
+
   return useInfiniteQuery<
     AuditLogPage,
     Error,
@@ -65,9 +67,9 @@ export function useInfiniteAuditLogs(
     AuditLogQueryKey,
     string | undefined
   >({
-    queryKey: [...auditLogKeys.list(filters), "infinite"] as const,
+    queryKey: [...auditLogKeys.list(pagedFilters), "infinite"] as const,
     queryFn: ({ pageParam }) =>
-      listAuditLogs({ ...filters, cursor: pageParam }),
+      listAuditLogs({ ...pagedFilters, cursor: pageParam }),
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     ...options,
