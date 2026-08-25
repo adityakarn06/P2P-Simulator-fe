@@ -21,10 +21,10 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Set the backend URL in `.env.local` (replace `8080` with the port your backend uses):
+Set the backend URL in `.env.local`:
 
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8080
+NEXT_PUBLIC_API_URL=http://localhost:PORT
 ```
 
 ## Scripts
