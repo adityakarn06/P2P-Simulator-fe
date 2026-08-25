@@ -43,9 +43,11 @@ export type {
   PurchaseOrder,
   // Shipment
   Shipment,
+  ShipmentListItem,
   // Goods Receipt
   ReceiptItem,
   GoodsReceipt,
+  GoodsReceiptListItem,
   // Invoice
   InvoiceItem,
   Invoice,

@@ -32,6 +32,9 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
     setReceivedQuantity,
     damagedQuantity,
     setDamagedQuantity,
+    dialogItems,
+    setItemReceivedQuantity,
+    setItemDamagedQuantity,
     notes,
     setNotes,
     fieldErrors,
@@ -84,7 +87,6 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
   }
 
   const { shipment: s, goodsReceipt } = shipment.data;
-  const multiLine = purchaseOrder.items.length !== 1;
 
   return (
     <div className="space-y-4">
@@ -114,18 +116,13 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
       {isInTransit(s) && (
         <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
           <p className="text-sm font-medium">{IN_TRANSIT_MESSAGE}</p>
-          {canSimulate ? (
+          {canSimulate && (
             <div className="mt-3">
               <Button disabled={actionsDisabled} onClick={openDialog} className="gap-1.5">
                 Simulate Delivery
               </Button>
             </div>
-          ) : multiLine ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              This purchase order has multiple lines — simulated delivery is only supported for
-              single-line purchase orders in this MVP.
-            </p>
-          ) : null}
+          )}
         </div>
       )}
 
@@ -141,6 +138,9 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
         onReceivedQuantityChange={setReceivedQuantity}
         damagedQuantity={damagedQuantity}
         onDamagedQuantityChange={setDamagedQuantity}
+        items={dialogItems}
+        onItemReceivedQuantityChange={setItemReceivedQuantity}
+        onItemDamagedQuantityChange={setItemDamagedQuantity}
         notes={notes}
         onNotesChange={setNotes}
         fieldErrors={fieldErrors}

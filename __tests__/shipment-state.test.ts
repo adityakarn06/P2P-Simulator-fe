@@ -7,8 +7,9 @@
  * Coverage:
  *   - shouldShowShipmentSection — keyed on purchase order status
  *   - isInTransit / isDelivered — keyed on shipment status
- *   - canSimulateDelivery — IN_TRANSIT + no existing receipt + single line
- *   - validateReceiptForm — per backend-docs/receipts-api.md quantity rules
+ *   - canSimulateDelivery — IN_TRANSIT + no existing receipt, any line count
+ *   - validateReceiptForm — per backend-docs/receipts-api.md quantity rules (flat/single-line)
+ *   - validateMultiLineReceiptForm / buildExplicitReceiptBody — explicit (multi-line) form
  *   - deriveReceiptRows — reads acceptedQuantity, never recomputes it
  *   - parseReceiptConflict — defensive parse of a 409 CONFLICT's details
  */
@@ -22,6 +23,8 @@ import {
   canSimulateDelivery,
   validateReceiptForm,
   buildFlatReceiptBody,
+  validateMultiLineReceiptForm,
+  buildExplicitReceiptBody,
   deriveReceiptRows,
   parseReceiptConflict,
   isQuantityConflict,
@@ -86,8 +89,12 @@ describe("canSimulateDelivery", () => {
     assert.equal(canSimulateDelivery({ ...base, hasGoodsReceipt: true }), false);
   });
 
-  test("false for a multi-line purchase order", () => {
-    assert.equal(canSimulateDelivery({ ...base, poItemCount: 2 }), false);
+  test("true for a multi-line purchase order (explicit form)", () => {
+    assert.equal(canSimulateDelivery({ ...base, poItemCount: 2 }), true);
+  });
+
+  test("false when the purchase order has no lines", () => {
+    assert.equal(canSimulateDelivery({ ...base, poItemCount: 0 }), false);
   });
 });
 
@@ -208,6 +215,150 @@ describe("buildFlatReceiptBody", () => {
       damagedQuantity: 2,
       notes: "crushed box",
     });
+  });
+});
+
+describe("validateMultiLineReceiptForm", () => {
+  const poItems = [
+    { id: "poi_1", quantity: 100 },
+    { id: "poi_2", quantity: 50 },
+  ];
+
+  test("accepts a valid multi-line submission", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "98", damagedQuantity: "2" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "50", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.values.items.length, 2);
+      assert.deepEqual(result.values.items[0], {
+        purchaseOrderItemId: "poi_1",
+        receivedQuantity: 98,
+        damagedQuantity: 2,
+      });
+    }
+  });
+
+  test("rejects a line with damaged greater than received", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "10", damagedQuantity: "11" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.errors["items.0.damagedQuantity"]);
+  });
+
+  test("rejects a line with received greater than ordered", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "101", damagedQuantity: "0" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.errors["items.0.receivedQuantity"]);
+  });
+
+  test("rejects a submission where every line has zero received", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "0", damagedQuantity: "0" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.errors.items);
+  });
+
+  test("defaults a blank damaged field to 0", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "100", damagedQuantity: "" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.values.items[0].damagedQuantity, 0);
+  });
+
+  test("rejects a line whose purchaseOrderItemId is not on the purchase order", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_unknown", receivedQuantity: "999999", damagedQuantity: "0" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.errors["items.0.purchaseOrderItemId"]);
+  });
+
+  test("accepts a partial delivery where only some lines have arrived", () => {
+    const result = validateMultiLineReceiptForm(
+      {
+        items: [
+          { purchaseOrderItemId: "poi_1", receivedQuantity: "100", damagedQuantity: "0" },
+          { purchaseOrderItemId: "poi_2", receivedQuantity: "0", damagedQuantity: "0" },
+        ],
+        notes: "",
+      },
+      poItems
+    );
+    assert.equal(result.ok, true);
+  });
+});
+
+describe("buildExplicitReceiptBody", () => {
+  test("builds the items[] payload, omitting notes when undefined", () => {
+    const body = buildExplicitReceiptBody("ship_1", {
+      items: [
+        { purchaseOrderItemId: "poi_1", receivedQuantity: 98, damagedQuantity: 2 },
+        { purchaseOrderItemId: "poi_2", receivedQuantity: 0, damagedQuantity: 0 },
+      ],
+    });
+    assert.deepEqual(body, {
+      shipmentId: "ship_1",
+      items: [
+        { purchaseOrderItemId: "poi_1", receivedQuantity: 98, damagedQuantity: 2 },
+        { purchaseOrderItemId: "poi_2", receivedQuantity: 0, damagedQuantity: 0 },
+      ],
+    });
+  });
+
+  test("includes notes when present", () => {
+    const body = buildExplicitReceiptBody("ship_1", {
+      items: [{ purchaseOrderItemId: "poi_1", receivedQuantity: 98, damagedQuantity: 2 }],
+      notes: "crushed box",
+    });
+    assert.equal(body.notes, "crushed box");
   });
 });
 

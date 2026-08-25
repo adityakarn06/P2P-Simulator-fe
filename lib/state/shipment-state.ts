@@ -6,7 +6,11 @@ import type {
   ShipmentStatus,
   GoodsReceipt,
 } from "@/types/models";
-import type { SimulateReceiptFlatBody } from "@/lib/api/receipts";
+import type {
+  SimulateReceiptFlatBody,
+  SimulateReceiptExplicitBody,
+  SimulateReceiptItem,
+} from "@/lib/api/receipts";
 import { ApiError } from "@/types/api";
 
 /**
@@ -44,10 +48,11 @@ export function isDelivered(s: Pick<Shipment, "status">): boolean {
 }
 
 /**
- * The MVP flat payload (backend-docs/receipts-api.md) only works for
- * single-line purchase orders — the backend 400s otherwise
- * (VALIDATION_ERROR: "flat form on a multi-line purchase order"). Guard the
- * button rather than round-tripping a guaranteed failure.
+ * A shipment can be simulated once it's IN_TRANSIT and hasn't already
+ * received a delivery. The flat payload (backend-docs/receipts-api.md) only
+ * works for single-line purchase orders; multi-line POs use the explicit
+ * `items[]` form instead — see `buildExplicitReceiptBody` below. Either way,
+ * simulation is available as long as the PO has at least one line.
  */
 export function canSimulateDelivery(flags: {
   shipmentStatus: ShipmentStatus;
@@ -57,7 +62,7 @@ export function canSimulateDelivery(flags: {
   return (
     flags.shipmentStatus === "IN_TRANSIT" &&
     !flags.hasGoodsReceipt &&
-    flags.poItemCount === 1
+    flags.poItemCount >= 1
   );
 }
 
@@ -154,6 +159,170 @@ export function buildFlatReceiptBody(
     shipmentId,
     receivedQuantity: values.receivedQuantity,
     damagedQuantity: values.damagedQuantity,
+    ...(values.notes ? { notes: values.notes } : {}),
+  };
+}
+
+/** One PO line's raw (string) form input for the multi-line simulate form. */
+export interface MultiLineReceiptRawItem {
+  purchaseOrderItemId: string;
+  receivedQuantity: string;
+  damagedQuantity: string;
+}
+
+export interface MultiLineReceiptItemValues {
+  purchaseOrderItemId: string;
+  receivedQuantity: number;
+  damagedQuantity: number;
+}
+
+export interface MultiLineReceiptFormValues {
+  items: MultiLineReceiptItemValues[];
+  notes?: string;
+}
+
+export type MultiLineReceiptFormResult =
+  | { ok: true; values: MultiLineReceiptFormValues }
+  | { ok: false; errors: Record<string, string> };
+
+/**
+ * Mirrors backend-docs/receipts-api.md quantity rules for the explicit
+ * (multi-line) form: per line damaged <= received <= ordered, and at least
+ * one line must have received > 0 — the backend 400s on "nothing received".
+ */
+export function buildMultiLineReceiptFormSchema(
+  poItems: Pick<PurchaseOrderItem, "id" | "quantity">[]
+) {
+  const orderedById = new Map(poItems.map((p) => [p.id, p.quantity]));
+
+  return z
+    .object({
+      items: z
+        .array(
+          z.object({
+            purchaseOrderItemId: z.string(),
+            receivedQuantity: z.number().int("Must be a whole number.").min(0, "Cannot be negative."),
+            damagedQuantity: z.number().int("Must be a whole number.").min(0, "Cannot be negative."),
+          })
+        )
+        .min(1),
+      notes: z.string().trim().max(500, "Notes must be 500 characters or fewer.").optional(),
+    })
+    .superRefine((v, ctx) => {
+      let anyReceived = false;
+      v.items.forEach((item, index) => {
+        if (!orderedById.has(item.purchaseOrderItemId)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "This line is not on the purchase order.",
+            path: ["items", index, "purchaseOrderItemId"],
+          });
+          return;
+        }
+        const ordered = orderedById.get(item.purchaseOrderItemId)!;
+        if (item.receivedQuantity > 0) anyReceived = true;
+        if (item.damagedQuantity > item.receivedQuantity) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Damaged quantity cannot exceed received quantity.",
+            path: ["items", index, "damagedQuantity"],
+          });
+        }
+        if (item.receivedQuantity > ordered) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Received quantity cannot exceed the ordered quantity (${ordered}).`,
+            path: ["items", index, "receivedQuantity"],
+          });
+        }
+      });
+      if (!anyReceived) {
+        ctx.addIssue({
+          code: "custom",
+          message: "At least one line must have a received quantity greater than 0.",
+          path: ["items"],
+        });
+      }
+    });
+}
+
+/**
+ * Validates the raw (string) multi-line form fields, one row per PO item.
+ * A blank damaged field is coerced to 0, matching the flat-form behaviour.
+ */
+export function validateMultiLineReceiptForm(
+  raw: { items: MultiLineReceiptRawItem[]; notes: string },
+  poItems: Pick<PurchaseOrderItem, "id" | "quantity">[]
+): MultiLineReceiptFormResult {
+  const errors: Record<string, string> = {};
+  const parsedItems: MultiLineReceiptItemValues[] = [];
+
+  raw.items.forEach((item, index) => {
+    const receivedQuantity =
+      item.receivedQuantity.trim() === "" ? 0 : Number(item.receivedQuantity);
+    const damagedQuantity =
+      item.damagedQuantity.trim() === "" ? 0 : Number(item.damagedQuantity);
+
+    if (Number.isNaN(receivedQuantity)) {
+      errors[`items.${index}.receivedQuantity`] = "Received quantity must be a number.";
+    }
+    if (Number.isNaN(damagedQuantity)) {
+      errors[`items.${index}.damagedQuantity`] = "Damaged quantity must be a number.";
+    }
+    if (!Number.isNaN(receivedQuantity) && !Number.isNaN(damagedQuantity)) {
+      parsedItems.push({
+        purchaseOrderItemId: item.purchaseOrderItemId,
+        receivedQuantity,
+        damagedQuantity,
+      });
+    }
+  });
+
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+
+  const schema = buildMultiLineReceiptFormSchema(poItems);
+  const result = schema.safeParse({ items: parsedItems, notes: raw.notes });
+
+  if (!result.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of result.error.issues) {
+      const path = issue.path.join(".") || "form";
+      if (!fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return { ok: false, errors: fieldErrors };
+  }
+
+  const trimmedNotes = result.data.notes?.trim();
+  return {
+    ok: true,
+    values: {
+      items: result.data.items,
+      notes: trimmedNotes ? trimmedNotes : undefined,
+    },
+  };
+}
+
+/**
+ * Builds the explicit POST /receipts/simulate body for a multi-line purchase
+ * order. Lines with receivedQuantity === 0 are sent explicitly rather than
+ * omitted — an omitted line is recorded as nothing received per
+ * backend-docs/receipts-api.md, so sending it is equivalent but unambiguous.
+ */
+export function buildExplicitReceiptBody(
+  shipmentId: string,
+  values: MultiLineReceiptFormValues
+): SimulateReceiptExplicitBody {
+  const items: SimulateReceiptItem[] = values.items.map((item) => ({
+    purchaseOrderItemId: item.purchaseOrderItemId,
+    receivedQuantity: item.receivedQuantity,
+    damagedQuantity: item.damagedQuantity,
+  }));
+
+  return {
+    shipmentId,
+    items,
     ...(values.notes ? { notes: values.notes } : {}),
   };
 }

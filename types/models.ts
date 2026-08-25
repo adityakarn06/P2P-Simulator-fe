@@ -21,7 +21,7 @@ export type PurchaseOrderStatus =
 
 export type ShipmentStatus = "CREATED" | "IN_TRANSIT" | "DELIVERED";
 
-export type GoodsReceiptStatus = "PARTIAL" | "COMPLETED";
+export type GoodsReceiptStatus = "PENDING" | "PARTIAL" | "COMPLETED";
 
 export type InvoiceStatus =
   | "UPLOADED"
@@ -314,6 +314,24 @@ export interface Shipment {
   createdAt: string;
 }
 
+/** Row from GET /shipments — adds poNumber, omits nothing from Shipment. */
+export interface ShipmentListItem {
+  id: string;
+  purchaseOrderId: string;
+  poNumber: string;
+  trackingNumber: string;
+  carrier: string | null;
+  status: ShipmentStatus;
+  /** ISO 8601 or null */
+  shippedAt: string | null;
+  /** ISO 8601 or null */
+  deliveredAt: string | null;
+  /** ISO 8601 */
+  expectedDeliveryDate: string;
+  /** ISO 8601 */
+  createdAt: string;
+}
+
 export interface ReceiptItem {
   id: string;
   purchaseOrderItemId: string;
@@ -337,6 +355,20 @@ export interface GoodsReceipt {
   /** ISO 8601 */
   createdAt: string;
   items: ReceiptItem[];
+}
+
+/** Row from GET /receipts — summary only, no items[]. */
+export interface GoodsReceiptListItem {
+  id: string;
+  purchaseOrderId: string;
+  poNumber: string;
+  shipmentId: string;
+  status: GoodsReceiptStatus;
+  /** ISO 8601 */
+  receivedAt: string;
+  receivedBy: string;
+  /** ISO 8601 */
+  createdAt: string;
 }
 
 export interface InvoiceItem {

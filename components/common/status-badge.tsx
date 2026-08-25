@@ -66,6 +66,7 @@ const STATUS_MAP: Record<string, StatusConfig> = {
   CRITICAL: { label: "Critical", className: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800" },
 
   // Goods Receipt
+  PENDING: { label: "Pending", className: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700" },
   PARTIAL: { label: "Partial", className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" },
 };
 

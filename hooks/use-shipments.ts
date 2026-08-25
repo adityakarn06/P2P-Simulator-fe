@@ -5,18 +5,27 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import { getShipment, type ShipmentWithReceipt } from "@/lib/api/shipments";
+import {
+  getShipment,
+  listShipments,
+  type ShipmentWithReceipt,
+  type ListShipmentsParams,
+} from "@/lib/api/shipments";
 import {
   simulateReceipt,
   type SimulateReceiptBody,
   type SimulateReceiptResponse,
 } from "@/lib/api/receipts";
-import { ApiError } from "@/types/api";
+import type { ShipmentListItem } from "@/types/models";
+import { ApiError, type CursorPaginatedData } from "@/types/api";
 import { purchaseOrderKeys } from "@/hooks/use-purchase-orders";
 import { requisitionKeys } from "@/hooks/use-requisitions";
+import { receiptKeys } from "@/hooks/use-receipts";
 
 export const shipmentKeys = {
   all: ["shipments"] as const,
+  lists: () => [...shipmentKeys.all, "list"] as const,
+  list: (filters: ListShipmentsParams) => [...shipmentKeys.lists(), filters] as const,
   details: () => [...shipmentKeys.all, "detail"] as const,
   detail: (id: string) => ["shipment", id] as const,
 } as const;
@@ -35,6 +44,24 @@ export function useShipment(
     queryKey: shipmentKeys.detail(id),
     queryFn: () => getShipment(id),
     enabled: Boolean(id),
+    ...options,
+  });
+}
+
+/**
+ * Lists shipments for the current organisation, newest first.
+ * Query key: ["shipments", "list", filters]
+ */
+export function useShipmentList(
+  filters: ListShipmentsParams = {},
+  options?: Omit<
+    UseQueryOptions<CursorPaginatedData<ShipmentListItem>>,
+    "queryKey" | "queryFn"
+  >
+) {
+  return useQuery<CursorPaginatedData<ShipmentListItem>>({
+    queryKey: shipmentKeys.list(filters),
+    queryFn: () => listShipments(filters),
     ...options,
   });
 }
@@ -61,6 +88,8 @@ function invalidateAfterReceipt(
   queryClient.invalidateQueries({
     queryKey: shipmentKeys.detail(variables.body.shipmentId),
   });
+  queryClient.invalidateQueries({ queryKey: shipmentKeys.lists() });
+  queryClient.invalidateQueries({ queryKey: receiptKeys.lists() });
   if (variables.purchaseOrderId) {
     queryClient.invalidateQueries({
       queryKey: purchaseOrderKeys.detail(variables.purchaseOrderId),

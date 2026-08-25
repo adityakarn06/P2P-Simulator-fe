@@ -6,11 +6,14 @@ import { usePurchaseOrder } from "@/hooks/use-purchase-orders";
 import { useShipment, useSimulateReceipt } from "@/hooks/use-shipments";
 import {
   buildFlatReceiptBody,
+  buildExplicitReceiptBody,
   canSimulateDelivery,
   isQuantityConflict,
   parseReceiptConflict,
   validateReceiptForm,
+  validateMultiLineReceiptForm,
   type ReceiptConflict,
+  type MultiLineReceiptRawItem,
 } from "@/lib/state/shipment-state";
 import { getErrorMessage } from "@/lib/errors";
 import { ApiError } from "@/types/api";
@@ -42,7 +45,9 @@ function receiptErrorToastMessage(e: unknown): string {
  */
 export function useShipmentSection(
   requisitionId: string,
-  purchaseOrder: Pick<PurchaseOrder, "id"> & { items: Pick<PurchaseOrderItem, "quantity">[] }
+  purchaseOrder: Pick<PurchaseOrder, "id"> & {
+    items: Pick<PurchaseOrderItem, "id" | "description" | "quantity">[];
+  }
 ) {
   const poDetail = usePurchaseOrder(purchaseOrder.id);
   const shipmentId = poDetail.data?.shipment?.id ?? "";
@@ -50,9 +55,12 @@ export function useShipmentSection(
   const shipment = useShipment(shipmentId, { enabled: Boolean(shipmentId) });
   const simulate = useSimulateReceipt();
 
+  const multiLine = purchaseOrder.items.length > 1;
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [receivedQuantity, setReceivedQuantity] = useState("");
   const [damagedQuantity, setDamagedQuantity] = useState("0");
+  const [lineItems, setLineItems] = useState<MultiLineReceiptRawItem[]>([]);
   const [notes, setNotes] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<ReceiptConflict | null>(null);
@@ -70,8 +78,18 @@ export function useShipmentSection(
     : false;
 
   const openDialog = () => {
-    setReceivedQuantity(orderedQuantity > 0 ? String(orderedQuantity) : "");
-    setDamagedQuantity("0");
+    if (multiLine) {
+      setLineItems(
+        purchaseOrder.items.map((item) => ({
+          purchaseOrderItemId: item.id,
+          receivedQuantity: item.quantity > 0 ? String(item.quantity) : "",
+          damagedQuantity: "0",
+        }))
+      );
+    } else {
+      setReceivedQuantity(orderedQuantity > 0 ? String(orderedQuantity) : "");
+      setDamagedQuantity("0");
+    }
     setNotes("");
     setFieldErrors({});
     setConflict(null);
@@ -103,6 +121,34 @@ export function useShipmentSection(
     setFieldErrors((prev) => ({ ...prev, damagedQuantity: "" }));
   };
 
+  const handleItemReceivedQuantityChange = (purchaseOrderItemId: string, value: string) => {
+    const index = lineItems.findIndex((item) => item.purchaseOrderItemId === purchaseOrderItemId);
+    setLineItems((prev) =>
+      prev.map((item) =>
+        item.purchaseOrderItemId === purchaseOrderItemId
+          ? { ...item, receivedQuantity: value }
+          : item
+      )
+    );
+    setFieldErrors((prev) => ({
+      ...prev,
+      [`items.${index}.receivedQuantity`]: "",
+      items: "",
+    }));
+  };
+
+  const handleItemDamagedQuantityChange = (purchaseOrderItemId: string, value: string) => {
+    const index = lineItems.findIndex((item) => item.purchaseOrderItemId === purchaseOrderItemId);
+    setLineItems((prev) =>
+      prev.map((item) =>
+        item.purchaseOrderItemId === purchaseOrderItemId
+          ? { ...item, damagedQuantity: value }
+          : item
+      )
+    );
+    setFieldErrors((prev) => ({ ...prev, [`items.${index}.damagedQuantity`]: "" }));
+  };
+
   const handleNotesChange = (value: string) => {
     setNotes(value);
   };
@@ -110,20 +156,37 @@ export function useShipmentSection(
   const handleSimulateDelivery = () => {
     if (actionsDisabled || !shipmentId) return;
 
-    const result = validateReceiptForm(
-      { receivedQuantity, damagedQuantity, notes },
-      orderedQuantity
-    );
-    if (!result.ok) {
-      setFieldErrors(result.errors);
-      return;
-    }
+    const body = multiLine
+      ? (() => {
+          const result = validateMultiLineReceiptForm(
+            { items: lineItems, notes },
+            purchaseOrder.items
+          );
+          if (!result.ok) {
+            setFieldErrors(result.errors);
+            return null;
+          }
+          return buildExplicitReceiptBody(shipmentId, result.values);
+        })()
+      : (() => {
+          const result = validateReceiptForm(
+            { receivedQuantity, damagedQuantity, notes },
+            orderedQuantity
+          );
+          if (!result.ok) {
+            setFieldErrors(result.errors);
+            return null;
+          }
+          return buildFlatReceiptBody(shipmentId, result.values);
+        })();
+
+    if (!body) return;
     setFieldErrors({});
     setConflict(null);
 
     simulate.mutate(
       {
-        body: buildFlatReceiptBody(shipmentId, result.values),
+        body,
         requisitionId,
         purchaseOrderId: purchaseOrder.id,
       },
@@ -155,20 +218,37 @@ export function useShipmentSection(
     );
   };
 
+  const dialogItems = multiLine
+    ? lineItems.map((raw) => {
+        const poItem = purchaseOrder.items.find((p) => p.id === raw.purchaseOrderItemId);
+        return {
+          purchaseOrderItemId: raw.purchaseOrderItemId,
+          description: poItem?.description ?? raw.purchaseOrderItemId,
+          orderedQuantity: poItem?.quantity ?? 0,
+          receivedQuantity: raw.receivedQuantity,
+          damagedQuantity: raw.damagedQuantity,
+        };
+      })
+    : undefined;
+
   return {
     poDetail,
     shipment,
     simulate,
     canSimulate,
+    multiLine,
     orderedQuantity,
     dialogOpen,
     openDialog,
     onDialogChange,
     receivedQuantity,
     damagedQuantity,
-    notes,
+    dialogItems,
     setReceivedQuantity: handleReceivedQuantityChange,
     setDamagedQuantity: handleDamagedQuantityChange,
+    setItemReceivedQuantity: handleItemReceivedQuantityChange,
+    setItemDamagedQuantity: handleItemDamagedQuantityChange,
+    notes,
     setNotes: handleNotesChange,
     fieldErrors,
     conflict,

@@ -16,14 +16,31 @@ import { Spinner } from "@/components/common/loading-state";
 import { cn } from "@/lib/utils";
 import type { ReceiptConflict } from "@/lib/state/shipment-state";
 
+/** One PO line's controlled form state for the multi-line dialog. */
+export interface MultiLineDialogItem {
+  purchaseOrderItemId: string;
+  description: string;
+  orderedQuantity: number;
+  receivedQuantity: string;
+  damagedQuantity: string;
+}
+
 interface SimulateDeliveryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Single-line mode (default) — omit `items` to use this. */
   orderedQuantity: number;
   receivedQuantity: string;
   onReceivedQuantityChange: (value: string) => void;
   damagedQuantity: string;
   onDamagedQuantityChange: (value: string) => void;
+  /**
+   * Multi-line mode — when present, renders one received/damaged row per PO
+   * line instead of the single-line fields above.
+   */
+  items?: MultiLineDialogItem[];
+  onItemReceivedQuantityChange?: (purchaseOrderItemId: string, value: string) => void;
+  onItemDamagedQuantityChange?: (purchaseOrderItemId: string, value: string) => void;
   notes: string;
   onNotesChange: (value: string) => void;
   fieldErrors: Record<string, string>;
@@ -51,6 +68,9 @@ export function SimulateDeliveryDialog({
   onReceivedQuantityChange,
   damagedQuantity,
   onDamagedQuantityChange,
+  items,
+  onItemReceivedQuantityChange,
+  onItemDamagedQuantityChange,
   notes,
   onNotesChange,
   fieldErrors,
@@ -59,13 +79,17 @@ export function SimulateDeliveryDialog({
   isPending = false,
   error,
 }: SimulateDeliveryDialogProps) {
+  const multiLine = items != null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={cn(multiLine ? "sm:max-w-lg" : "sm:max-w-md")}>
         <DialogHeader>
           <DialogTitle>Simulate delivery</DialogTitle>
           <DialogDescription>
-            Record what arrived for this shipment. Ordered quantity is {orderedQuantity}.
+            {multiLine
+              ? "Record what arrived for each line on this shipment."
+              : `Record what arrived for this shipment. Ordered quantity is ${orderedQuantity}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -88,39 +112,108 @@ export function SimulateDeliveryDialog({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="received-quantity">Received quantity</Label>
-            <Input
-              id="received-quantity"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={receivedQuantity}
-              onChange={(e) => onReceivedQuantityChange(e.target.value)}
-              disabled={isPending}
-              aria-invalid={Boolean(fieldErrors.receivedQuantity)}
-            />
-            {fieldErrors.receivedQuantity && (
-              <p className="text-xs text-destructive">{fieldErrors.receivedQuantity}</p>
-            )}
-          </div>
+          {multiLine ? (
+            <div className="space-y-3">
+              {fieldErrors.items && (
+                <p className="text-xs text-destructive">{fieldErrors.items}</p>
+              )}
+              {items.map((item, index) => (
+                <div
+                  key={item.purchaseOrderItemId}
+                  className="space-y-2 rounded-md border p-3"
+                >
+                  <p className="text-xs font-medium text-foreground">
+                    {item.description}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (ordered {item.orderedQuantity})
+                    </span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor={`received-${item.purchaseOrderItemId}`} className="text-xs">
+                        Received
+                      </Label>
+                      <Input
+                        id={`received-${item.purchaseOrderItemId}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={item.receivedQuantity}
+                        onChange={(e) =>
+                          onItemReceivedQuantityChange?.(item.purchaseOrderItemId, e.target.value)
+                        }
+                        disabled={isPending}
+                        aria-invalid={Boolean(fieldErrors[`items.${index}.receivedQuantity`])}
+                      />
+                      {fieldErrors[`items.${index}.receivedQuantity`] && (
+                        <p className="text-xs text-destructive">
+                          {fieldErrors[`items.${index}.receivedQuantity`]}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`damaged-${item.purchaseOrderItemId}`} className="text-xs">
+                        Damaged
+                      </Label>
+                      <Input
+                        id={`damaged-${item.purchaseOrderItemId}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={item.damagedQuantity}
+                        onChange={(e) =>
+                          onItemDamagedQuantityChange?.(item.purchaseOrderItemId, e.target.value)
+                        }
+                        disabled={isPending}
+                        aria-invalid={Boolean(fieldErrors[`items.${index}.damagedQuantity`])}
+                      />
+                      {fieldErrors[`items.${index}.damagedQuantity`] && (
+                        <p className="text-xs text-destructive">
+                          {fieldErrors[`items.${index}.damagedQuantity`]}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="received-quantity">Received quantity</Label>
+                <Input
+                  id="received-quantity"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={receivedQuantity}
+                  onChange={(e) => onReceivedQuantityChange(e.target.value)}
+                  disabled={isPending}
+                  aria-invalid={Boolean(fieldErrors.receivedQuantity)}
+                />
+                {fieldErrors.receivedQuantity && (
+                  <p className="text-xs text-destructive">{fieldErrors.receivedQuantity}</p>
+                )}
+              </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="damaged-quantity">Damaged quantity</Label>
-            <Input
-              id="damaged-quantity"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={damagedQuantity}
-              onChange={(e) => onDamagedQuantityChange(e.target.value)}
-              disabled={isPending}
-              aria-invalid={Boolean(fieldErrors.damagedQuantity)}
-            />
-            {fieldErrors.damagedQuantity && (
-              <p className="text-xs text-destructive">{fieldErrors.damagedQuantity}</p>
-            )}
-          </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="damaged-quantity">Damaged quantity</Label>
+                <Input
+                  id="damaged-quantity"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={damagedQuantity}
+                  onChange={(e) => onDamagedQuantityChange(e.target.value)}
+                  disabled={isPending}
+                  aria-invalid={Boolean(fieldErrors.damagedQuantity)}
+                />
+                {fieldErrors.damagedQuantity && (
+                  <p className="text-xs text-destructive">{fieldErrors.damagedQuantity}</p>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="receipt-notes">Notes</Label>
