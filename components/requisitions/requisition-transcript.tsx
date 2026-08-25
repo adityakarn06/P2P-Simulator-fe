@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "@/components/requisitions/message-bubble";
-import { Spinner } from "@/components/common/loading-state";
+import { ThinkingOrb } from "@/components/ui/thinking-orbs";
 import type { RequisitionMessage } from "@/types/models";
 
 interface RequisitionTranscriptProps {
@@ -42,7 +42,10 @@ export function RequisitionTranscript({
 
         {isWaitingForReply && (
           <div className="flex items-center gap-2 self-start rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm text-muted-foreground">
-            <Spinner size="sm" />
+            {/* Pinned theme="light": the pill sits on bg-muted (a light
+                neutral) in this light-only UI. Revisit if a theme toggle is
+                added — this could become theme="auto" instead. */}
+            <ThinkingOrb state="composing" size={20} theme="light" aria-hidden="true" />
             <span>Thinking…</span>
           </div>
         )}

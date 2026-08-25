@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
+import { Separator } from "@/components/ui/separator";
 import { Callout } from "@/components/common/callout";
 import { WorkflowTimeline } from "@/components/workflow/workflow-timeline";
 import { WorkflowProgressGauge } from "@/components/workflow/workflow-progress-gauge";
@@ -38,6 +40,35 @@ function sectionActivity(stages: WorkflowStage[], stageId: string) {
   return <ProcessingIndicator label={stage.activity.label} variant={stage.activity.variant} />;
 }
 
+/**
+ * Timeline stage ids don't map 1:1 to WorkflowSection ids — several stages
+ * (goods-receipt, matching, payment) share a section with a neighbor, and
+ * some sections only render once their data exists. List candidates in
+ * priority order; the first one actually present in the DOM wins.
+ */
+const STAGE_TO_SECTION_CANDIDATES: Record<string, string[]> = {
+  request: ["request"],
+  requirements: ["requirements", "conversation"],
+  sourcing: ["sourcing", "conversation"],
+  "purchase-order": ["purchase-order"],
+  shipment: ["shipment"],
+  "goods-receipt": ["shipment"],
+  invoice: ["invoice"],
+  matching: ["invoice"],
+  payment: ["invoice"],
+};
+
+function scrollToStageSection(requisitionId: string, stage: WorkflowStage) {
+  const candidates = STAGE_TO_SECTION_CANDIDATES[stage.id] ?? [];
+  for (const suffix of candidates) {
+    const el = document.getElementById(`${requisitionId}:${suffix}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+  }
+}
+
 export function RequisitionDetail({ id }: RequisitionDetailProps) {
   const {
     requisition,
@@ -56,6 +87,18 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
     conversationOpen,
     showSourcing,
   } = useRequisitionDetail(id);
+
+  // Auto-scroll to whichever section is currently active as the workflow
+  // progresses (polling advances it in real time), so the user watching the
+  // timeline doesn't have to manually track down where things moved.
+  const activeStage = stages?.find((s) => s.status === "active") ?? null;
+  const lastAutoScrolledStageIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!requisition || !activeStage) return;
+    if (lastAutoScrolledStageIdRef.current === activeStage.id) return;
+    lastAutoScrolledStageIdRef.current = activeStage.id;
+    scrollToStageSection(requisition.id, activeStage);
+  }, [requisition, activeStage]);
 
   if (isLoading) {
     return <RequisitionDetailSkeleton />;
@@ -84,6 +127,8 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
           </div>
         }
       />
+
+      <Separator />
 
       {exceptionInvoiceId && <RequisitionExceptionAlert invoiceId={exceptionInvoiceId} />}
 
@@ -233,6 +278,7 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
           <WorkflowTimeline
             stages={stages}
             className="rounded-lg border p-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+            onStageSelect={(stage) => scrollToStageSection(requisition.id, stage)}
           />
           <WorkflowProgressGauge stages={stages} />
         </div>

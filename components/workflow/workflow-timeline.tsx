@@ -10,9 +10,11 @@ interface WorkflowTimelineProps {
    */
   stages: WorkflowStage[];
   className?: string;
+  /** Called when a completed or active stage is clicked. */
+  onStageSelect?: (stage: WorkflowStage) => void;
 }
 
-export function WorkflowTimeline({ stages, className }: WorkflowTimelineProps) {
+export function WorkflowTimeline({ stages, className, onStageSelect }: WorkflowTimelineProps) {
   if (stages.length === 0) return null;
 
   return (
@@ -22,6 +24,7 @@ export function WorkflowTimeline({ stages, className }: WorkflowTimelineProps) {
           key={stage.id}
           stage={stage}
           isLast={idx === stages.length - 1}
+          onSelect={onStageSelect}
         />
       ))}
     </ol>

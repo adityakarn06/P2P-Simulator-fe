@@ -36,7 +36,7 @@ export function WorkflowSection({
   const contentId = `${sectionId}-content`;
 
   return (
-    <Card className={cn("gap-0", className)}>
+    <Card id={sectionId} className={cn("gap-0 scroll-mt-4", className)}>
       <CardHeader className="flex-row items-center justify-between gap-2">
         <button
           type="button"
@@ -48,7 +48,7 @@ export function WorkflowSection({
           {/* Not <CardTitle> here — it renders a <div>, and a <div> inside
               <button> (phrasing content only) is invalid HTML. Same visual
               styling, a <span> instead. */}
-          <span className="font-heading text-sm font-medium">{title}</span>
+          <span className="font-heading text-base font-bold">{title}</span>
           <HugeiconsIcon
             icon={open ? ArrowUp01Icon : ArrowDown01Icon}
             className="size-4 shrink-0 text-muted-foreground"

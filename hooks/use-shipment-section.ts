@@ -189,10 +189,15 @@ export function useShipmentSection(
             return;
           }
           // Validation errors stay inline in the dialog (InlineError below) —
-          // no toast, to avoid double-reporting the same message.
-          if (!(e instanceof ApiError && e.isValidation)) {
-            toast.error(receiptErrorToastMessage(e));
+          // no toast, to avoid double-reporting the same message. If this came
+          // from the deferred (post-animation) submission, the dialog was
+          // closed while the truck animated, so reopen it to make the inline
+          // error visible.
+          if (e instanceof ApiError && e.isValidation) {
+            setDialogOpen(true);
+            return;
           }
+          toast.error(receiptErrorToastMessage(e));
         },
       }
     );

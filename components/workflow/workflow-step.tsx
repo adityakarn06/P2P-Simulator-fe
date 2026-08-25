@@ -26,6 +26,7 @@ export interface WorkflowStage {
 interface WorkflowStepProps {
   stage: WorkflowStage;
   isLast?: boolean;
+  onSelect?: (stage: WorkflowStage) => void;
 }
 
 const statusStyles: Record<
@@ -58,8 +59,32 @@ const statusStyles: Record<
   },
 };
 
-export function WorkflowStep({ stage, isLast = false }: WorkflowStepProps) {
+export function WorkflowStep({ stage, isLast = false, onSelect }: WorkflowStepProps) {
   const styles = statusStyles[stage.status];
+  const isSelectable =
+    onSelect != null && (stage.status === "completed" || stage.status === "active");
+
+  const content = (
+    <>
+      <p className={cn("text-sm leading-none", styles.label)}>
+        <span className="sr-only">{styles.srText} </span>
+        {stage.label}
+      </p>
+      {stage.activity && (
+        <ProcessingIndicator
+          label={stage.activity.label}
+          variant={stage.activity.variant}
+          className="mt-1"
+        />
+      )}
+      {stage.note && <p className="mt-0.5 text-xs text-muted-foreground">{stage.note}</p>}
+      {stage.timestamp && (
+        <p className="mt-0.5 text-[11px] text-muted-foreground/70 tabular-nums">
+          {formatDateTime(stage.timestamp)}
+        </p>
+      )}
+    </>
+  );
 
   return (
     <li className="flex gap-3" aria-current={stage.status === "active" ? "step" : undefined}>
@@ -84,27 +109,21 @@ export function WorkflowStep({ stage, isLast = false }: WorkflowStepProps) {
       </div>
 
       {/* Right: content */}
-      <div className={cn("pb-4 min-w-0", isLast && "pb-0")}>
-        <p className={cn("text-sm leading-none", styles.label)}>
-          <span className="sr-only">{styles.srText} </span>
-          {stage.label}
-        </p>
-        {stage.activity && (
-          <ProcessingIndicator
-            label={stage.activity.label}
-            variant={stage.activity.variant}
-            className="mt-1"
-          />
-        )}
-        {stage.note && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{stage.note}</p>
-        )}
-        {stage.timestamp && (
-          <p className="mt-0.5 text-[11px] text-muted-foreground/70 tabular-nums">
-            {formatDateTime(stage.timestamp)}
-          </p>
-        )}
-      </div>
+      {isSelectable ? (
+        <button
+          type="button"
+          onClick={() => onSelect(stage)}
+          className={cn(
+            "min-w-0 flex-1 rounded-sm text-left pb-4",
+            isLast && "pb-0",
+            "cursor-pointer hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={cn("pb-4 min-w-0", isLast && "pb-0")}>{content}</div>
+      )}
     </li>
   );
 }

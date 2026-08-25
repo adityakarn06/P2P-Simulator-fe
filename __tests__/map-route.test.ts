@@ -7,12 +7,13 @@
  * Exercises the real module at lib/map/route.ts directly — no inlined
  * copies. Covers: route endpoints match Delhi/Kolkata, t is monotonic in
  * arc-length (constant-speed interpolation), bearing stays in [0, 360),
- * and sampled steps are near-uniform in length.
+ * sampled steps are near-uniform in length, and pathUpTo always ends
+ * exactly at pointAt's coordinate (trail stays glued to the truck marker).
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildRoute, pointAt, easeInOutCubic, DELHI, KOLKATA } from "@/lib/map/route";
+import { buildRoute, pointAt, pathUpTo, easeInOutCubic, DELHI, KOLKATA } from "@/lib/map/route";
 
 describe("buildRoute", () => {
   test("starts at Delhi and ends at Kolkata", () => {
@@ -111,6 +112,35 @@ describe("pointAt", () => {
     const end = pointAt(path, 1);
     assert.deepEqual(below.coord, start.coord);
     assert.deepEqual(above.coord, end.coord);
+  });
+});
+
+describe("pathUpTo", () => {
+  test("last point exactly matches pointAt's coordinate at every t", () => {
+    const path = buildRoute();
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const trail = pathUpTo(path, t);
+      const { coord } = pointAt(path, t);
+      assert.deepEqual(trail[trail.length - 1], coord);
+    }
+  });
+
+  test("starts at Delhi and grows monotonically with t", () => {
+    const path = buildRoute();
+    assert.deepEqual(pathUpTo(path, 0)[0], DELHI);
+    let prevLength = 0;
+    for (let i = 0; i <= 20; i++) {
+      const trail = pathUpTo(path, i / 20);
+      assert.ok(trail.length >= prevLength);
+      prevLength = trail.length;
+    }
+  });
+
+  test("at t=1, ends exactly at Kolkata", () => {
+    const path = buildRoute();
+    const trail = pathUpTo(path, 1);
+    assert.deepEqual(trail[trail.length - 1], KOLKATA);
   });
 });
 

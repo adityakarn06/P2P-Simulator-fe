@@ -3,15 +3,24 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { buildRoute, pointAt, easeInOutCubic, DELHI, KOLKATA, type LngLat } from "@/lib/map/route";
+import {
+  buildRoute,
+  pointAt,
+  pathUpTo,
+  easeInOutCubic,
+  DELHI,
+  KOLKATA,
+  type LngLat,
+} from "@/lib/map/route";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const ANIMATION_DURATION_MS = 10_000;
 
-// Fixed camera framing the whole Delhi–Kolkata corridor — set once at
-// construction and never touched again (no fitBounds/flyTo/easeTo below).
-const CAMERA_CENTER: LngLat = [82.5, 25.8];
-const CAMERA_ZOOM = 4.6;
+// Padding (px) kept around the route so Delhi/Kolkata never sit flush
+// against the card edge. The camera itself is still computed once, at
+// construction, from the route's bounds — never adjusted again afterwards
+// (no fitBounds/flyTo/easeTo once the animation starts).
+const CAMERA_PADDING = 36;
 
 const ROUTE_SOURCE_ID = "shipment-route";
 const ROUTE_PROGRESS_SOURCE_ID = "shipment-route-progress";
@@ -65,16 +74,24 @@ export function ShipmentMap({ onArrive, className }: ShipmentMapProps) {
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
 
+    const route = buildRoute();
+    const bounds = route.points.reduce(
+      (b, [lng, lat]) => b.extend([lng, lat]),
+      new mapboxgl.LngLatBounds(route.points[0], route.points[0])
+    );
+
+    // `bounds` computes the camera once, synchronously, at construction —
+    // this is the initial framing, not a mid-animation camera move, so it
+    // doesn't violate the "fixed camera during the animation" requirement.
     const map = new mapboxgl.Map({
       container,
       style: "mapbox://styles/mapbox/light-v11",
-      center: CAMERA_CENTER,
-      zoom: CAMERA_ZOOM,
+      bounds,
+      fitBoundsOptions: { padding: CAMERA_PADDING },
       interactive: false,
       attributionControl: false,
     });
 
-    const route = buildRoute();
     let rafId = 0;
     let firstFrameTime: number | null = null;
     let fired = false;
@@ -131,9 +148,7 @@ export function ShipmentMap({ onArrive, className }: ShipmentMapProps) {
 
       const { coord, bearing } = pointAt(route, easedT);
       setTruck(coord, bearing);
-
-      const drivenCount = Math.max(2, Math.round(easedT * (route.points.length - 1)) + 1);
-      drawRoute(route.points.slice(0, drivenCount));
+      drawRoute(pathUpTo(route, easedT));
 
       if (rawT >= 1) {
         finish();

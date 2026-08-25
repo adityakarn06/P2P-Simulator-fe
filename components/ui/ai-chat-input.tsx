@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { ThinkingOrb } from "@/components/ui/thinking-orbs";
 
 // ----------------------------------------------------------------------
 // Transition Physics
@@ -124,15 +125,6 @@ function StopIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function SpinnerIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="animate-spin">
-      <circle cx="7" cy="7" r="5.25" stroke="currentColor" strokeWidth="1.75" strokeOpacity="0.25" />
-      <path d="M12.25 7a5.25 5.25 0 0 0-5.25-5.25" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1073,9 +1065,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               disabled={disabled || (isPending && !isRecording) || (showArrow && !hasValue)}
               aria-label={isPending ? "Sending" : showArrow ? "Send prompt" : showStop ? "Stop recording" : "Use voice input"}
               style={{ borderRadius: 9999 }}
-              className="absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-40 disabled:pointer-events-none"
+              className={cn(
+                "absolute right-2 bottom-2 z-[10] flex h-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-40 disabled:pointer-events-none",
+                isPending ? "w-auto gap-2 px-3" : "w-8"
+              )}
             >
-              <span className="relative flex h-full w-full items-center justify-center">
+              <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showArrow && !isPending ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
                   <ArrowUpIcon />
                 </span>
@@ -1086,8 +1081,21 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                   <StopIcon />
                 </span>
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", isPending ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>
-                  <SpinnerIcon />
+                  {/* Pinned theme="dark": the button is bg-primary (near-black in
+                      this light-only UI), so the light-dots-on-dark palette is
+                      correct regardless of the OS color scheme. Revisit if a
+                      theme toggle is added. */}
+                  <ThinkingOrb state="working" size={20} theme="dark" aria-hidden="true" />
                 </span>
+              </span>
+              <span
+                className={cn(
+                  "overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-300",
+                  isPending ? "max-w-[6rem] opacity-100" : "max-w-0 opacity-0"
+                )}
+                aria-hidden="true"
+              >
+                Thinking…
               </span>
             </button>
 

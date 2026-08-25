@@ -128,13 +128,13 @@ export function easeInOutCubic(t: number): number {
 }
 
 /**
- * Resolves the coordinate + direction of travel at arc-length fraction t
- * (0 = start, 1 = end) via binary search over the cumulative-length table,
- * so animation speed is constant along the curve regardless of how sample
- * density varies segment to segment.
+ * Binary-searches the cumulative-length table for the sample pair bracketing
+ * arc-length fraction t. Shared by pointAt and pathUpTo so both agree on
+ * exactly the same position — otherwise the drawn trail and the truck
+ * marker drift apart over the animation.
  */
-export function pointAt(path: RoutePath, t: number): RoutePosition {
-  const { points, cumulative, totalLength } = path;
+function bracket(path: RoutePath, t: number): { lower: number; upper: number; segT: number } {
+  const { cumulative, totalLength } = path;
   const clampedT = Math.min(1, Math.max(0, t));
   const targetLength = clampedT * totalLength;
 
@@ -154,10 +154,36 @@ export function pointAt(path: RoutePath, t: number): RoutePosition {
   const segLength = cumulative[upper] - cumulative[lower];
   const segT = segLength > 0 ? (targetLength - cumulative[lower]) / segLength : 0;
 
+  return { lower, upper, segT };
+}
+
+/**
+ * Resolves the coordinate + direction of travel at arc-length fraction t
+ * (0 = start, 1 = end) via binary search over the cumulative-length table,
+ * so animation speed is constant along the curve regardless of how sample
+ * density varies segment to segment.
+ */
+export function pointAt(path: RoutePath, t: number): RoutePosition {
+  const { points } = path;
+  const { lower, upper, segT } = bracket(path, t);
+
   const a = points[lower];
   const b = points[upper];
   const coord: LngLat = [a[0] + (b[0] - a[0]) * segT, a[1] + (b[1] - a[1]) * segT];
   const bearing = bearingBetween(a, b);
 
   return { coord, bearing };
+}
+
+/**
+ * The portion of the route already driven at arc-length fraction t, ending
+ * exactly at pointAt(path, t).coord — so the revealed trail line always
+ * terminates precisely under the truck marker instead of drifting from it
+ * (slicing `points` by index or by t*points.length does NOT line up, since
+ * raw sample points are not evenly spaced in arc length).
+ */
+export function pathUpTo(path: RoutePath, t: number): LngLat[] {
+  const { lower } = bracket(path, t);
+  const { coord } = pointAt(path, t);
+  return [...path.points.slice(0, lower + 1), coord];
 }
