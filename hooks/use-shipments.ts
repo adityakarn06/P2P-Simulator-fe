@@ -11,6 +11,9 @@ import {
   type SimulateReceiptBody,
   type SimulateReceiptResponse,
 } from "@/lib/api/receipts";
+import { ApiError } from "@/types/api";
+import { purchaseOrderKeys } from "@/hooks/use-purchase-orders";
+import { requisitionKeys } from "@/hooks/use-requisitions";
 
 export const shipmentKeys = {
   all: ["shipments"] as const,
@@ -36,20 +39,61 @@ export function useShipment(
   });
 }
 
+export interface SimulateReceiptVariables {
+  body: SimulateReceiptBody;
+  /** For invalidating the owning requisition's detail + list queries. */
+  requisitionId?: string;
+  /** For invalidating the owning purchase order's detail + list queries. */
+  purchaseOrderId?: string;
+}
+
+/**
+ * Invalidates every query the receipt affects: the shipment (now DELIVERED
+ * with a goodsReceipt), the purchase order (now RECEIVED — flat detail key,
+ * not reached by invalidating shipmentKeys.all/purchaseOrderKeys.all), and
+ * the owning requisition (its embedded purchaseOrder.status changed too).
+ * Mirrors invalidatePurchaseOrder in hooks/use-purchase-orders.ts.
+ */
+function invalidateAfterReceipt(
+  queryClient: ReturnType<typeof useQueryClient>,
+  variables: SimulateReceiptVariables
+) {
+  queryClient.invalidateQueries({
+    queryKey: shipmentKeys.detail(variables.body.shipmentId),
+  });
+  if (variables.purchaseOrderId) {
+    queryClient.invalidateQueries({
+      queryKey: purchaseOrderKeys.detail(variables.purchaseOrderId),
+    });
+    queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
+  }
+  if (variables.requisitionId) {
+    queryClient.invalidateQueries({
+      queryKey: requisitionKeys.detail(variables.requisitionId),
+    });
+    queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+  }
+}
+
 /**
  * Simulates a delivery event (IoT stand-in).
  * Accepts either the flat form (single-line POs) or explicit form (multi-line).
- * On success, invalidates the shipment detail so goodsReceipt is refreshed.
+ *
+ * On success, invalidates the shipment, purchase order, and requisition
+ * queries — a receipt moves all three. On a 409 (conflict/invalid-state) or
+ * 404, the same invalidation runs so the UI reflects the real, current state
+ * instead of showing a stale IN_TRANSIT shipment next to an error.
  */
 export function useSimulateReceipt() {
   const queryClient = useQueryClient();
 
-  return useMutation<SimulateReceiptResponse, Error, SimulateReceiptBody>({
-    mutationFn: simulateReceipt,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: shipmentKeys.detail(variables.shipmentId),
-      });
+  return useMutation<SimulateReceiptResponse, Error, SimulateReceiptVariables>({
+    mutationFn: ({ body }) => simulateReceipt(body),
+    onSuccess: (_data, variables) => invalidateAfterReceipt(queryClient, variables),
+    onError: (error, variables) => {
+      if (error instanceof ApiError && (error.isConflict || error.isNotFound)) {
+        invalidateAfterReceipt(queryClient, variables);
+      }
     },
   });
 }
