@@ -9,6 +9,8 @@
  *   - formatTaxRate — integer bps arithmetic
  *   - validateRejectReason — 1–500 chars, trimmed, per backend-docs/purchase-orders-api.md
  *   - arePoActionsDisabled — duplicate-click guard
+ *   - PO_LIST_TAB_STATUS — /purchase-orders tab -> status filter map
+ *   - getPurchaseOrderListPollInterval — poll while a row is worker-driven
  */
 
 import { test, describe } from "node:test";
@@ -20,6 +22,8 @@ import {
   formatTaxRate,
   validateRejectReason,
   arePoActionsDisabled,
+  PO_LIST_TAB_STATUS,
+  getPurchaseOrderListPollInterval,
 } from "@/lib/state/purchase-order-state";
 import type { PurchaseOrderStatus } from "@/types/models";
 
@@ -137,5 +141,48 @@ describe("arePoActionsDisabled", () => {
 
   test("true once reject has succeeded (closes the race before refetch)", () => {
     assert.equal(arePoActionsDisabled({ ...base, rejectSucceeded: true }), true);
+  });
+});
+
+describe("PO_LIST_TAB_STATUS", () => {
+  test("all has no status filter", () => {
+    assert.equal(PO_LIST_TAB_STATUS.all, undefined);
+  });
+
+  test("every other tab maps to its matching status", () => {
+    assert.equal(PO_LIST_TAB_STATUS.pending, "PENDING_APPROVAL");
+    assert.equal(PO_LIST_TAB_STATUS.approved, "APPROVED");
+    assert.equal(PO_LIST_TAB_STATUS.shipped, "SHIPPED");
+    assert.equal(PO_LIST_TAB_STATUS.received, "RECEIVED");
+    assert.equal(PO_LIST_TAB_STATUS.rejected, "REJECTED");
+  });
+});
+
+describe("getPurchaseOrderListPollInterval", () => {
+  test("false for an empty list", () => {
+    assert.equal(getPurchaseOrderListPollInterval([]), false);
+  });
+
+  test("polls while a row is PENDING_APPROVAL", () => {
+    assert.notEqual(
+      getPurchaseOrderListPollInterval([{ status: "PENDING_APPROVAL" }]),
+      false
+    );
+  });
+
+  test("polls while a row is SHIPPED", () => {
+    assert.notEqual(getPurchaseOrderListPollInterval([{ status: "SHIPPED" }]), false);
+  });
+
+  test("false when every row is terminal", () => {
+    assert.equal(
+      getPurchaseOrderListPollInterval([
+        { status: "APPROVED" },
+        { status: "REJECTED" },
+        { status: "RECEIVED" },
+        { status: "COMPLETED" },
+      ]),
+      false
+    );
   });
 });

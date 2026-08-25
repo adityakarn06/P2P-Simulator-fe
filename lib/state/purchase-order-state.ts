@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { PurchaseOrder } from "@/types/models";
+import type { PurchaseOrder, PurchaseOrderStatus } from "@/types/models";
+import type { PurchaseOrderListTab } from "@/store/purchase-order-store";
 
 /**
  * All derivation logic for the purchase-order approval UI lives here, kept
@@ -68,4 +69,39 @@ export function arePoActionsDisabled(flags: {
     flags.approveSucceeded ||
     flags.rejectSucceeded
   );
+}
+
+/**
+ * Maps each /purchase-orders tab to the `status` query param it filters on
+ * (undefined = no filter, i.e. "all"). DRAFT and COMPLETED have no tab of
+ * their own — for the MVP every PO is created PENDING_APPROVAL regardless of
+ * value (backend-docs/purchase-orders-api.md), so DRAFT is unreachable, and
+ * both remain visible under "All".
+ */
+export const PO_LIST_TAB_STATUS: Record<PurchaseOrderListTab, PurchaseOrderStatus | undefined> = {
+  all: undefined,
+  pending: "PENDING_APPROVAL",
+  approved: "APPROVED",
+  shipped: "SHIPPED",
+  received: "RECEIVED",
+  rejected: "REJECTED",
+};
+
+const PO_LIST_POLL_MS = 3000;
+
+/**
+ * Poll interval (ms) for GET /purchase-orders, or `false` to stop polling.
+ * Polls while any row in the current page is still worker-driven —
+ * PENDING_APPROVAL (waiting on a human) or SHIPPED (waiting on delivery
+ * simulation) — so an approval/rejection or delivery made elsewhere shows up
+ * without a manual refresh. An empty page (e.g. a status tab with no rows
+ * yet) has nothing to wait on, so it does not poll.
+ */
+export function getPurchaseOrderListPollInterval(
+  items: Pick<PurchaseOrder, "status">[]
+): number | false {
+  const hasActiveRow = items.some(
+    (item) => item.status === "PENDING_APPROVAL" || item.status === "SHIPPED"
+  );
+  return hasActiveRow ? PO_LIST_POLL_MS : false;
 }
