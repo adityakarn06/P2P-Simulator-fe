@@ -5,7 +5,7 @@
  * `@/` imports are resolved by __tests__/alias-loader.mjs, registered via
  * `--import` in the "test" script.
  *
- * Exercises the real module at features/requisitions/lib/requisition-state.ts
+ * Exercises the real module at lib/state/requisition-state.ts
  * directly — no inlined copies. `isChatResultComplete` below is the one
  * intentional exception: it tests the raw POST-response payload shape
  * (`RequisitionChatResult`), not the module.
@@ -31,7 +31,7 @@ import {
   missingFieldLabel,
   deriveWorkflowStages,
   formatDeliveryDeadline,
-} from "@/features/requisitions/lib/requisition-state";
+} from "@/lib/state/requisition-state";
 import type {
   RequisitionStatus,
   Requirement,

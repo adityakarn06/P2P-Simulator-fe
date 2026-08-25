@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useInfiniteAuditLogs } from "@/hooks/use-audit-logs";
-import { PageHeader } from "@/components/page-header";
-import { DataTable, type AppColumnDef } from "@/components/data-table";
-import { EmptyState } from "@/components/empty-state";
-import { ErrorState } from "@/components/error-state";
-import { Spinner } from "@/components/loading-state";
+import { useActivityLog } from "@/hooks/use-activity-log";
+import { PageHeader } from "@/components/common/page-header";
+import { DataTable, type AppColumnDef } from "@/components/common/data-table";
+import { EmptyState } from "@/components/common/empty-state";
+import { ErrorState } from "@/components/common/error-state";
+import { Spinner } from "@/components/common/loading-state";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -17,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { formatDateTime, formatRelativeTime, formatStatus } from "@/lib/formatters";
 import { ActivityIcon } from "@/lib/icons";
+import { ACTIVITY_FILTER_ALL } from "@/store/activity-store";
 import type { AuditAction, AuditActorType, AuditLog, EntityType } from "@/types/models";
 
 const ACTOR_TYPES: AuditActorType[] = ["SYSTEM", "AI", "USER"];
@@ -131,25 +131,15 @@ const columns: AppColumnDef<AuditLog>[] = [
   },
 ];
 
-const ALL = "__all__";
-
 export default function ActivityPage() {
-  const [actorType, setActorType] = useState<AuditActorType | typeof ALL>(ALL);
-  const [entityType, setEntityType] = useState<EntityType | typeof ALL>(ALL);
-  const [action, setAction] = useState<AuditAction | typeof ALL>(ALL);
-
-  const filters = useMemo(
-    () => ({
-      limit: 50,
-      actorType: actorType === ALL ? undefined : actorType,
-      entityType: entityType === ALL ? undefined : entityType,
-      action: action === ALL ? undefined : action,
-    }),
-    [actorType, entityType, action]
-  );
-
   const {
-    data,
+    actorType,
+    entityType,
+    action,
+    setActorType,
+    setEntityType,
+    setAction,
+    rows,
     isLoading,
     isError,
     error,
@@ -157,14 +147,7 @@ export default function ActivityPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteAuditLogs(filters, {
-    // Poll only while a single page is loaded — the doc's "poll if you need
-    // a live activity feed" without re-fetching every accumulated page.
-    refetchInterval: (query) =>
-      (query.state.data?.pages.length ?? 1) <= 1 ? 10_000 : false,
-  });
-
-  const rows = data?.pages.flatMap((page) => page.items) ?? [];
+  } = useActivityLog();
 
   if (isError) {
     return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
@@ -183,12 +166,12 @@ export default function ActivityPage() {
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={actorType} onValueChange={(v) => setActorType(v as AuditActorType | typeof ALL)}>
+        <Select value={actorType} onValueChange={(v) => setActorType(v as AuditActorType | typeof ACTIVITY_FILTER_ALL)}>
           <SelectTrigger>
             <SelectValue placeholder="Actor" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>All actors</SelectItem>
+            <SelectItem value={ACTIVITY_FILTER_ALL}>All actors</SelectItem>
             {ACTOR_TYPES.map((t) => (
               <SelectItem key={t} value={t}>
                 {formatStatus(t)}
@@ -197,12 +180,12 @@ export default function ActivityPage() {
           </SelectContent>
         </Select>
 
-        <Select value={entityType} onValueChange={(v) => setEntityType(v as EntityType | typeof ALL)}>
+        <Select value={entityType} onValueChange={(v) => setEntityType(v as EntityType | typeof ACTIVITY_FILTER_ALL)}>
           <SelectTrigger>
             <SelectValue placeholder="Entity" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>All entities</SelectItem>
+            <SelectItem value={ACTIVITY_FILTER_ALL}>All entities</SelectItem>
             {ENTITY_TYPES.map((t) => (
               <SelectItem key={t} value={t}>
                 {t}
@@ -211,12 +194,12 @@ export default function ActivityPage() {
           </SelectContent>
         </Select>
 
-        <Select value={action} onValueChange={(v) => setAction(v as AuditAction | typeof ALL)}>
+        <Select value={action} onValueChange={(v) => setAction(v as AuditAction | typeof ACTIVITY_FILTER_ALL)}>
           <SelectTrigger>
             <SelectValue placeholder="Action" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>All actions</SelectItem>
+            <SelectItem value={ACTIVITY_FILTER_ALL}>All actions</SelectItem>
             {ACTIONS.map((a) => (
               <SelectItem key={a} value={a}>
                 {formatStatus(a)}

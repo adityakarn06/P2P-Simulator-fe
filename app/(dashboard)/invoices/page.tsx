@@ -1,34 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { useInvoices } from "@/hooks/use-invoices";
-import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
-import { Money } from "@/components/money";
-import { DataTable, type AppColumnDef } from "@/components/data-table";
-import { EmptyState } from "@/components/empty-state";
-import { ErrorState } from "@/components/error-state";
+import { useInvoiceList } from "@/hooks/use-invoice-list";
+import { PageHeader } from "@/components/common/page-header";
+import { StatusBadge } from "@/components/common/status-badge";
+import { Money } from "@/components/common/money";
+import { DataTable, type AppColumnDef } from "@/components/common/data-table";
+import { EmptyState } from "@/components/common/empty-state";
+import { ErrorState } from "@/components/common/error-state";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRelativeTime, formatDate } from "@/lib/formatters";
-import type { Invoice, InvoiceStatus } from "@/types/models";
+import type { Invoice } from "@/types/models";
+import type { InvoiceListTab } from "@/store/invoice-store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   Invoice01Icon,
 } from "@/lib/icons";
-
-type TabFilter = "all" | "processing" | "extracted" | "exception" | "paid" | "failed";
-
-const TAB_STATUS_MAP: Record<TabFilter, InvoiceStatus | undefined> = {
-  all: undefined,
-  processing: "PROCESSING",
-  extracted: "EXTRACTED",
-  exception: "EXCEPTION",
-  paid: "PAID",
-  failed: "FAILED",
-};
 
 const columns: AppColumnDef<Invoice>[] = [
   {
@@ -108,12 +97,7 @@ const columns: AppColumnDef<Invoice>[] = [
 ];
 
 export default function InvoicesPage() {
-  const [activeTab, setActiveTab] = useState<TabFilter>("all");
-  const status = TAB_STATUS_MAP[activeTab];
-
-  const { data, isLoading, isError, error, refetch } = useInvoices(
-    status ? { status, limit: 50 } : { limit: 50 }
-  );
+  const { activeTab, setActiveTab, data, isLoading, isError, error, refetch } = useInvoiceList();
 
   if (isError) {
     return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
@@ -126,7 +110,7 @@ export default function InvoicesPage() {
         description="Upload supplier invoices. Gemini Vision extracts line items for three-way matching."
       />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabFilter)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as InvoiceListTab)}>
         <TabsList className="h-8">
           <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
           <TabsTrigger value="processing" className="text-xs">Processing</TabsTrigger>

@@ -1,5 +1,5 @@
-import { PageHeader } from "@/components/page-header";
-import { NewRequisitionForm } from "@/features/requisitions/components/new-requisition-form";
+import { PageHeader } from "@/components/common/page-header";
+import { NewRequisitionForm } from "@/components/requisitions/new-requisition-form";
 
 export default function NewRequisitionPage() {
   return (

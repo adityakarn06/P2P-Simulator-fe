@@ -11,7 +11,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { splitCandidates, isSelected } from "@/features/sourcing/lib/sourcing-state";
+import { splitCandidates, isSelected } from "@/lib/state/sourcing-state";
 import type { Sourcing, SupplierCandidate } from "@/types/models";
 
 const ZERO_SCORES = { price: 0, delivery: 0, reliability: 0, rating: 0, stock: 0, total: 0 };

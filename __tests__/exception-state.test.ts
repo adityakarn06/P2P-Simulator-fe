@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import {
   resolveReasonSchema,
   isResolvable,
-} from "@/features/exceptions/lib/exception-state";
+} from "@/lib/state/exception-state";
 
 describe("resolveReasonSchema", () => {
   test("rejects a reason under 10 characters", () => {

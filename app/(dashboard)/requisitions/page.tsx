@@ -1,34 +1,24 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 
-import { useRequisitions } from "@/hooks/use-requisitions";
-import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
-import { DataTable, type AppColumnDef } from "@/components/data-table";
-import { EmptyState } from "@/components/empty-state";
-import { ErrorState } from "@/components/error-state";
+import { useRequisitionList } from "@/hooks/use-requisition-list";
+import { PageHeader } from "@/components/common/page-header";
+import { StatusBadge } from "@/components/common/status-badge";
+import { DataTable, type AppColumnDef } from "@/components/common/data-table";
+import { EmptyState } from "@/components/common/empty-state";
+import { ErrorState } from "@/components/common/error-state";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRelativeTime } from "@/lib/formatters";
-import type { RequisitionListItem, RequisitionStatus } from "@/types/models";
+import type { RequisitionListItem } from "@/types/models";
+import type { RequisitionListTab } from "@/store/requisition-store";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   FileEditIcon,
   Add01Icon,
 } from "@/lib/icons";
-
-type TabFilter = "all" | "processing" | "needs_clarification" | "completed" | "failed";
-
-const TAB_STATUS_MAP: Record<TabFilter, RequisitionStatus | undefined> = {
-  all: undefined,
-  processing: "PROCESSING",
-  needs_clarification: "NEEDS_CLARIFICATION",
-  completed: "PO_CREATED",
-  failed: "FAILED",
-};
 
 const columns: AppColumnDef<RequisitionListItem>[] = [
   {
@@ -90,12 +80,8 @@ const columns: AppColumnDef<RequisitionListItem>[] = [
 ];
 
 export default function RequisitionsPage() {
-  const [activeTab, setActiveTab] = useState<TabFilter>("all");
-  const status = TAB_STATUS_MAP[activeTab];
-
-  const { data, isLoading, isError, error, refetch } = useRequisitions(
-    status ? { status, limit: 50 } : { limit: 50 }
-  );
+  const { activeTab, setActiveTab, data, isLoading, isError, error, refetch } =
+    useRequisitionList();
 
   if (isError) {
     return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
@@ -114,7 +100,7 @@ export default function RequisitionsPage() {
         }
       />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabFilter)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as RequisitionListTab)}>
         <TabsList className="h-8">
           <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
           <TabsTrigger value="processing" className="text-xs">Processing</TabsTrigger>

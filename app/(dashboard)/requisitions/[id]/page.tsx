@@ -1,4 +1,4 @@
-import { RequisitionDetail } from "@/features/requisitions/components/requisition-detail";
+import { RequisitionDetail } from "@/components/requisitions/requisition-detail";
 
 interface Props {
   params: Promise<{ id: string }>;
