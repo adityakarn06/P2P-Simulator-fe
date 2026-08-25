@@ -108,12 +108,27 @@ export function useRequisitionDetail(id: string) {
   // from `null` (resolved, confirmed empty) so the Invoice stage doesn't
   // flash "active — upload the invoice" for a PO that already has one, in
   // the moment before this list's first fetch completes.
+  const latestInvoice = invoiceSectionShown ? invoices.data?.items[0] : undefined;
   const latestInvoiceStatus = invoiceSectionShown
     ? invoices.data
-      ? (invoices.data.items[0]?.status ?? null)
+      ? (latestInvoice?.status ?? null)
       : undefined
     : null;
+  // Only meaningful once latestInvoiceStatus === "EXCEPTION" — see
+  // RequisitionExceptionAlert, the one consumer.
+  const exceptionInvoiceId =
+    latestInvoiceStatus === "EXCEPTION" ? (latestInvoice?.id ?? null) : null;
   const stages = requisition ? deriveWorkflowStages(requisition, latestInvoiceStatus) : [];
+  // The page header's pill: read back off the already-derived stages (rather
+  // than recomputing with getWorkerActivity/getAwaitingAction) so the header
+  // and the timeline can never disagree about which stage is active or what
+  // its caption says. A "working" caption takes priority if — contrary to
+  // the invariant the two derivation functions maintain — more than one
+  // stage somehow carries an activity at once.
+  const headerActivity =
+    stages.find((s) => s.activity?.variant === "working")?.activity ??
+    stages.find((s) => s.activity?.variant === "awaiting")?.activity ??
+    null;
   const conversationOpen = requisition ? requisition.requirement == null : false;
   const showSourcing = requisition
     ? requisition.sourcing != null ||
@@ -134,6 +149,8 @@ export function useRequisitionDetail(id: string) {
     handleSend,
     composerEnabled,
     stages,
+    headerActivity,
+    exceptionInvoiceId,
     conversationOpen,
     showSourcing,
   };

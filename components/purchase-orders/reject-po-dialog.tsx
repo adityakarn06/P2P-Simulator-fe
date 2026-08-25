@@ -56,6 +56,8 @@ export function RejectPoDialog({
             rows={3}
             disabled={isPending}
             placeholder="e.g. Budget exceeded, wrong supplier selected…"
+            aria-invalid={validationError != null}
+            aria-describedby={validationError ? "reject-reason-error" : undefined}
             className={cn(
               "w-full resize-none rounded-md border border-input bg-input/20 px-2 py-1.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30",
               validationError && "border-destructive"
@@ -63,7 +65,9 @@ export function RejectPoDialog({
           />
           <div className="flex items-center justify-between">
             {validationError ? (
-              <p className="text-xs text-destructive">{validationError}</p>
+              <p id="reject-reason-error" role="alert" className="text-xs text-destructive">
+                {validationError}
+              </p>
             ) : (
               <span />
             )}

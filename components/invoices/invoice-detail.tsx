@@ -4,9 +4,12 @@ import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { LoadingState, Spinner } from "@/components/common/loading-state";
-import { ErrorState } from "@/components/common/error-state";
+import { ErrorState, InlineError } from "@/components/common/error-state";
+import { Callout } from "@/components/common/callout";
 import { buttonVariants } from "@/components/ui/button";
 import { useInvoice } from "@/hooks/use-invoices";
+import { useExceptions } from "@/hooks/use-exceptions";
+import { isResolvable } from "@/lib/state/exception-state";
 import {
   getInvoicePollInterval,
   getInvoiceStatusMessage,
@@ -18,20 +21,9 @@ import { formatFileSize, formatDateTime } from "@/lib/formatters";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, CheckmarkCircle02Icon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import type { InvoiceStatusTone } from "@/lib/state/invoice-state";
-
 interface InvoiceDetailProps {
   id: string;
 }
-
-/** Maps a status message's tone to the banner's border/background classes. */
-const TONE_CLASSNAMES: Record<InvoiceStatusTone, string> = {
-  info: "border-border bg-muted/40",
-  progress: "border-primary/40 bg-primary/5",
-  success: "border-emerald-500/40 bg-emerald-500/5",
-  warning: "border-amber-500/40 bg-amber-500/5",
-  error: "border-destructive/40 bg-destructive/5 text-destructive",
-};
 
 export function InvoiceDetail({ id }: InvoiceDetailProps) {
   const { data: invoice, isLoading, isError, error, refetch } = useInvoice(id, {
@@ -41,6 +33,14 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
     },
     staleTime: 0,
   });
+
+  // Only needed to link "Review exception" straight to the blocking
+  // exception instead of the generic inbox.
+  const exceptions = useExceptions(
+    { entityId: id, limit: 100 },
+    { enabled: invoice?.status === "EXCEPTION" }
+  );
+  const blockingException = exceptions.data?.items.find((e) => isResolvable(e.status));
 
   if (isLoading) {
     return <LoadingState message="Loading invoice…" className="flex-1" />;
@@ -83,50 +83,50 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
         </div>
       </div>
 
-      <div
-        className={cn(
-          "flex items-start gap-2 rounded-lg border p-4 text-sm",
-          TONE_CLASSNAMES[message.tone]
-        )}
+      <Callout
+        tone={message.tone}
+        icon={
+          working ? (
+            <Spinner size="sm" />
+          ) : message.tone === "error" ? (
+            <HugeiconsIcon icon={Alert01Icon} className="size-4" />
+          ) : message.tone === "success" && invoice.status === "PAID" ? (
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
+          ) : undefined
+        }
       >
-        {working && <Spinner size="sm" className="mt-0.5 shrink-0" />}
-        {message.tone === "error" && (
-          <HugeiconsIcon icon={Alert01Icon} className="mt-0.5 size-4 shrink-0" />
+        <p>{message.title}</p>
+        {extracting && (
+          <p className={message.tone === "error" ? undefined : "text-muted-foreground"}>
+            Attempt {invoice.extractionAttempts || 1} of 3
+          </p>
         )}
-        {message.tone === "success" && invoice.status === "PAID" && (
-          <HugeiconsIcon icon={CheckmarkCircle02Icon} className="mt-0.5 size-4 shrink-0" />
+        {invoice.status === "FAILED" && (
+          <p className="text-muted-foreground">
+            There&apos;s no re-upload for this invoice — upload the document again as a new one
+            to retry.
+          </p>
         )}
-        <div className="space-y-1">
-          <p>{message.title}</p>
-          {extracting && (
-            <p className={message.tone === "error" ? undefined : "text-muted-foreground"}>
-              Attempt {invoice.extractionAttempts || 1} of 3
-            </p>
-          )}
-          {invoice.status === "FAILED" && (
-            <p className="text-muted-foreground">
-              There&apos;s no re-upload for this invoice — upload the document again as a new
-              one to retry.
-            </p>
-          )}
-          {invoice.status === "EXCEPTION" && (
+        {invoice.status === "EXCEPTION" && (
+          <>
+            {exceptions.isError && <InlineError error={exceptions.error} />}
             <Link
-              href="/exceptions"
+              href={blockingException ? `/exceptions/${blockingException.id}` : "/exceptions"}
               className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-1")}
             >
               Review exception
             </Link>
-          )}
-          {invoice.status === "FAILED" && (
-            <Link
-              href="/requisitions"
-              className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-1")}
-            >
-              Find the requisition to upload again
-            </Link>
-          )}
-        </div>
-      </div>
+          </>
+        )}
+        {invoice.status === "FAILED" && (
+          <Link
+            href="/requisitions"
+            className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-1")}
+          >
+            Find the requisition to upload again
+          </Link>
+        )}
+      </Callout>
 
       {extracted && <InvoiceExtractedFields invoice={invoice} />}
     </div>

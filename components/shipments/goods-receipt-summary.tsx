@@ -42,38 +42,49 @@ export function GoodsReceiptSummary({ goodsReceipt, poItems }: GoodsReceiptSumma
         </p>
       )}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Item</TableHead>
-            <TableHead className="text-right">Ordered</TableHead>
-            <TableHead className="text-right">Received</TableHead>
-            <TableHead className="text-right">Damaged</TableHead>
-            <TableHead className="text-right">Accepted</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
+      <div className="rounded-md border">
+        <Table>
+          <caption className="sr-only">Goods receipt line items: ordered, received, damaged and accepted quantities</caption>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                No receipt lines.
-              </TableCell>
+              <TableHead scope="col">Item</TableHead>
+              <TableHead scope="col" className="text-right">
+                Ordered
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Received
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Damaged
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Accepted
+              </TableHead>
             </TableRow>
-          ) : (
-            rows.map((row, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-medium text-foreground">{row.description}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.ordered}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.received}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.damaged}</TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  {row.accepted}
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                  No receipt lines.
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              rows.map((row, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-medium text-foreground">{row.description}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.ordered}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.received}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.damaged}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {row.accepted}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

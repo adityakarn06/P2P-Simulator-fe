@@ -140,7 +140,7 @@ export function InvoiceUploadDialog({
           )}
 
           {fileError && (
-            <p id="invoice-file-error" className="text-xs text-destructive">
+            <p id="invoice-file-error" role="alert" className="text-xs text-destructive">
               {fileError}
             </p>
           )}

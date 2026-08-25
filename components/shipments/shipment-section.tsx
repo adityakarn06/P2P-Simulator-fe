@@ -3,8 +3,9 @@
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { InlineError } from "@/components/common/error-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonLines } from "@/components/common/loading-state";
 import { EmptyState } from "@/components/common/empty-state";
+import { Callout } from "@/components/common/callout";
 import { formatDate, formatDateTime } from "@/lib/formatters";
 import { IN_TRANSIT_MESSAGE, isInTransit, isDelivered } from "@/lib/state/shipment-state";
 import { useShipmentSection } from "@/hooks/use-shipment-section";
@@ -44,13 +45,7 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
   } = useShipmentSection(requisitionId, purchaseOrder);
 
   if (poDetail.isLoading) {
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-4 w-1/3" />
-        <Skeleton className="h-4 w-2/3" />
-        <Skeleton className="h-4 w-1/2" />
-      </div>
-    );
+    return <SkeletonLines />;
   }
 
   if (poDetail.isError) {
@@ -69,13 +64,7 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
   }
 
   if (shipment.isLoading) {
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-4 w-1/3" />
-        <Skeleton className="h-4 w-2/3" />
-        <Skeleton className="h-4 w-1/2" />
-      </div>
-    );
+    return <SkeletonLines />;
   }
 
   if (shipment.isError) {
@@ -114,16 +103,16 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
       </div>
 
       {isInTransit(s) && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
-          <p className="text-sm font-medium">{IN_TRANSIT_MESSAGE}</p>
+        <Callout tone="progress">
+          <p className="font-medium text-foreground">{IN_TRANSIT_MESSAGE}</p>
           {canSimulate && (
-            <div className="mt-3">
+            <div className="pt-2">
               <Button disabled={actionsDisabled} onClick={openDialog} className="gap-1.5">
                 Simulate Delivery
               </Button>
             </div>
           )}
-        </div>
+        </Callout>
       )}
 
       {isDelivered(s) && goodsReceipt && (

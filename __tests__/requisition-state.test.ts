@@ -31,13 +31,38 @@ import {
   missingFieldLabel,
   deriveWorkflowStages,
   formatDeliveryDeadline,
+  getWorkerActivity,
+  getAwaitingAction,
 } from "@/lib/state/requisition-state";
+import { getInvoicePollInterval } from "@/lib/state/invoice-state";
 import type {
   RequisitionStatus,
+  InvoiceStatus,
   Requirement,
   Sourcing,
   PurchaseOrder,
 } from "@/types/models";
+
+const ALL_REQUISITION_STATUSES: RequisitionStatus[] = [
+  "CREATED",
+  "PROCESSING",
+  "NEEDS_CLARIFICATION",
+  "REQUIREMENTS_EXTRACTED",
+  "SUPPLIER_SELECTED",
+  "PO_CREATED",
+  "FAILED",
+];
+
+const ALL_INVOICE_STATUSES: InvoiceStatus[] = [
+  "UPLOADED",
+  "PROCESSING",
+  "EXTRACTED",
+  "MATCHING",
+  "APPROVED",
+  "EXCEPTION",
+  "PAID",
+  "FAILED",
+];
 
 interface RequisitionChatResult {
   status: "NEEDS_CLARIFICATION" | "PROCESSING" | "REQUIREMENTS_EXTRACTED";
@@ -597,6 +622,349 @@ describe("deriveWorkflowStages", () => {
     assert.equal(stages[1].status, "failed");
     assert.equal(stages[1].note, "No eligible suppliers found.");
     assert.equal(stages[2].status, "pending");
+  });
+
+  test("FAILED: the failed stage carries no stale activity caption", () => {
+    const stages = deriveWorkflowStages({
+      status: "FAILED",
+      requirement: REQUIREMENT,
+      sourcing: SOURCING,
+      purchaseOrder: makePo("APPROVED"),
+      failureReason: "Delivery simulation failed.",
+      createdAt: CREATED_AT,
+    });
+    const shipmentStage = stages.find((s) => s.id === "shipment")!;
+    assert.equal(shipmentStage.status, "failed");
+    assert.equal(shipmentStage.activity, null);
+  });
+
+  test("PO APPROVED with an invoice already extracting: both the awaiting and the worker stage carry their own caption", () => {
+    const stages = deriveWorkflowStages(
+      {
+        status: "PO_CREATED",
+        requirement: REQUIREMENT,
+        sourcing: SOURCING,
+        purchaseOrder: makePo("APPROVED"),
+        failureReason: null,
+        createdAt: CREATED_AT,
+      },
+      "PROCESSING"
+    );
+    const shipmentStage = stages.find((s) => s.id === "shipment")!;
+    const invoiceStage = stages.find((s) => s.id === "invoice")!;
+    assert.deepEqual(shipmentStage.activity, {
+      label: "Awaiting delivery simulation",
+      variant: "awaiting",
+    });
+    assert.deepEqual(invoiceStage.activity, {
+      label: "Extracting invoice…",
+      variant: "working",
+    });
+  });
+});
+
+const REQUIREMENT: Requirement = {
+  productName: "wireless keyboard",
+  quantity: 100,
+  maxUnitPricePaise: 200000,
+  currency: "INR",
+  deliveryDeadlineDays: 7,
+  deliveryLocation: null,
+  specifications: {},
+};
+
+const SOURCING = { decidedAt: "2026-08-24T00:00:00.000Z" } as Sourcing;
+
+function makePo(status: PurchaseOrder["status"]): PurchaseOrder {
+  return { id: "po_1", status } as PurchaseOrder;
+}
+
+describe("getWorkerActivity", () => {
+  test("CREATED/PROCESSING, no requirement yet: AI processing…", () => {
+    for (const status of ["CREATED", "PROCESSING"] as const) {
+      const result = getWorkerActivity({
+        status,
+        requirement: null,
+        sourcing: null,
+        purchaseOrder: null,
+      });
+      assert.deepEqual(result, { stageId: "requirements", label: "AI processing…" }, status);
+    }
+  });
+
+  test("completion trap: status still PROCESSING but requirement is set -> Supplier discovery, not AI processing", () => {
+    const result = getWorkerActivity({
+      status: "PROCESSING",
+      requirement: REQUIREMENT,
+      sourcing: null,
+      purchaseOrder: null,
+    });
+    assert.deepEqual(result, { stageId: "sourcing", label: "Supplier discovery…" });
+  });
+
+  test("REQUIREMENTS_EXTRACTED, no sourcing yet: Supplier discovery…", () => {
+    const result = getWorkerActivity({
+      status: "REQUIREMENTS_EXTRACTED",
+      requirement: REQUIREMENT,
+      sourcing: null,
+      purchaseOrder: null,
+    });
+    assert.deepEqual(result, { stageId: "sourcing", label: "Supplier discovery…" });
+  });
+
+  test("sourcing decided but no PO yet (one-tick race): Generating PO…", () => {
+    const result = getWorkerActivity({
+      status: "REQUIREMENTS_EXTRACTED",
+      requirement: REQUIREMENT,
+      sourcing: SOURCING,
+      purchaseOrder: null,
+    });
+    assert.deepEqual(result, { stageId: "purchase-order", label: "Generating PO…" });
+  });
+
+  test("SUPPLIER_SELECTED, no PO yet: Generating PO…", () => {
+    const result = getWorkerActivity({
+      status: "SUPPLIER_SELECTED",
+      requirement: REQUIREMENT,
+      sourcing: SOURCING,
+      purchaseOrder: null,
+    });
+    assert.deepEqual(result, { stageId: "purchase-order", label: "Generating PO…" });
+  });
+
+  test("PO already present while still polling: nothing requisition-side running", () => {
+    const result = getWorkerActivity({
+      status: "SUPPLIER_SELECTED",
+      requirement: REQUIREMENT,
+      sourcing: SOURCING,
+      purchaseOrder: makePo("PENDING_APPROVAL"),
+    });
+    assert.equal(result, null);
+  });
+
+  test("human-gated requisition statuses never animate, regardless of invoice status", () => {
+    for (const status of ["NEEDS_CLARIFICATION", "PO_CREATED", "FAILED"] as const) {
+      assert.equal(
+        getWorkerActivity({
+          status,
+          requirement: REQUIREMENT,
+          sourcing: SOURCING,
+          purchaseOrder: null,
+        }),
+        null,
+        status
+      );
+    }
+  });
+
+  test("invoice UPLOADED/PROCESSING: Extracting invoice…", () => {
+    for (const status of ["UPLOADED", "PROCESSING"] as const) {
+      const result = getWorkerActivity(
+        { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("APPROVED") },
+        status
+      );
+      assert.deepEqual(result, { stageId: "invoice", label: "Extracting invoice…" }, status);
+    }
+  });
+
+  test("invoice EXTRACTED/MATCHING: Checking invoice…", () => {
+    for (const status of ["EXTRACTED", "MATCHING"] as const) {
+      const result = getWorkerActivity(
+        { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("APPROVED") },
+        status
+      );
+      assert.deepEqual(result, { stageId: "matching", label: "Checking invoice…" }, status);
+    }
+  });
+
+  test("invoice APPROVED: Payment processing…", () => {
+    const result = getWorkerActivity(
+      { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("APPROVED") },
+      "APPROVED"
+    );
+    assert.deepEqual(result, { stageId: "payment", label: "Payment processing…" });
+  });
+
+  test("invoice EXCEPTION: the poll-but-no-worker carve-out — null despite getInvoicePollInterval returning a number", () => {
+    assert.equal(getInvoicePollInterval("EXCEPTION"), 2000);
+    const result = getWorkerActivity(
+      { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("APPROVED") },
+      "EXCEPTION"
+    );
+    assert.equal(result, null);
+  });
+
+  test("invoice PAID/FAILED: terminal, null", () => {
+    for (const status of ["PAID", "FAILED"] as const) {
+      const result = getWorkerActivity(
+        { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("COMPLETED") },
+        status
+      );
+      assert.equal(result, null, status);
+    }
+  });
+
+  test("invariant: null whenever getPollInterval(status) is false and there's no invoice", () => {
+    for (const status of ALL_REQUISITION_STATUSES) {
+      if (isPolling(status)) continue;
+      assert.equal(
+        getWorkerActivity({
+          status,
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: null,
+        }),
+        null,
+        status
+      );
+    }
+  });
+
+  test("invariant: null whenever getInvoicePollInterval(status) is false", () => {
+    for (const status of ALL_INVOICE_STATUSES) {
+      if (getInvoicePollInterval(status) !== false) continue;
+      const result = getWorkerActivity(
+        { status: "PO_CREATED", requirement: null, sourcing: null, purchaseOrder: makePo("COMPLETED") },
+        status
+      );
+      assert.equal(result, null, status);
+    }
+  });
+});
+
+describe("getAwaitingAction", () => {
+  test("NEEDS_CLARIFICATION, no PO: Awaiting your reply", () => {
+    const result = getAwaitingAction({ status: "NEEDS_CLARIFICATION", purchaseOrder: null });
+    assert.deepEqual(result, { stageId: "requirements", label: "Awaiting your reply" });
+  });
+
+  test("worker-driven requisition statuses with no PO: not awaiting anything", () => {
+    for (const status of [
+      "CREATED",
+      "PROCESSING",
+      "REQUIREMENTS_EXTRACTED",
+      "SUPPLIER_SELECTED",
+    ] as const) {
+      assert.equal(getAwaitingAction({ status, purchaseOrder: null }), null, status);
+    }
+  });
+
+  test("PO PENDING_APPROVAL: Awaiting your approval", () => {
+    const result = getAwaitingAction({
+      status: "PO_CREATED",
+      purchaseOrder: makePo("PENDING_APPROVAL"),
+    });
+    assert.deepEqual(result, { stageId: "purchase-order", label: "Awaiting your approval" });
+  });
+
+  test("PO APPROVED/SHIPPED, no invoice yet: Awaiting delivery simulation", () => {
+    for (const status of ["APPROVED", "SHIPPED"] as const) {
+      const result = getAwaitingAction(
+        { status: "PO_CREATED", purchaseOrder: makePo(status) },
+        null
+      );
+      assert.deepEqual(
+        result,
+        { stageId: "shipment", label: "Awaiting delivery simulation" },
+        status
+      );
+    }
+  });
+
+  test("PO APPROVED with an invoice already extracting: still Awaiting delivery simulation (coexists with a different worker stage)", () => {
+    const req = { status: "PO_CREATED" as const, purchaseOrder: makePo("APPROVED") };
+    const awaiting = getAwaitingAction(req, "PROCESSING");
+    const working = getWorkerActivity(
+      { ...req, requirement: null, sourcing: null },
+      "PROCESSING"
+    );
+    assert.deepEqual(awaiting, { stageId: "shipment", label: "Awaiting delivery simulation" });
+    assert.deepEqual(working, { stageId: "invoice", label: "Extracting invoice…" });
+    assert.notEqual(awaiting!.stageId, working!.stageId);
+  });
+
+  test("PO RECEIVED/COMPLETED, invoices list resolved empty: Awaiting invoice upload", () => {
+    for (const status of ["RECEIVED", "COMPLETED"] as const) {
+      const result = getAwaitingAction(
+        { status: "PO_CREATED", purchaseOrder: makePo(status) },
+        null
+      );
+      assert.deepEqual(result, { stageId: "invoice", label: "Awaiting invoice upload" }, status);
+    }
+  });
+
+  test("PO RECEIVED, invoices list not resolved yet (undefined): don't guess", () => {
+    const result = getAwaitingAction(
+      { status: "PO_CREATED", purchaseOrder: makePo("RECEIVED") },
+      undefined
+    );
+    assert.equal(result, null);
+  });
+
+  test("invoice EXCEPTION: Awaiting your review, regardless of PO status", () => {
+    for (const status of ["APPROVED", "RECEIVED"] as const) {
+      const result = getAwaitingAction(
+        { status: "PO_CREATED", purchaseOrder: makePo(status) },
+        "EXCEPTION"
+      );
+      assert.deepEqual(result, { stageId: "matching", label: "Awaiting your review" }, status);
+    }
+  });
+
+  test("invoice FAILED or PAID: null (has its own error/terminal UI, not an awaiting-you chip)", () => {
+    assert.equal(
+      getAwaitingAction({ status: "PO_CREATED", purchaseOrder: makePo("RECEIVED") }, "FAILED"),
+      null
+    );
+    assert.equal(
+      getAwaitingAction({ status: "PO_CREATED", purchaseOrder: makePo("COMPLETED") }, "PAID"),
+      null
+    );
+  });
+
+  test("PO REJECTED or DRAFT: null", () => {
+    assert.equal(
+      getAwaitingAction({ status: "FAILED", purchaseOrder: makePo("REJECTED") }),
+      null
+    );
+    assert.equal(
+      getAwaitingAction({ status: "PO_CREATED", purchaseOrder: makePo("DRAFT") }),
+      null
+    );
+  });
+
+  test("invariant: getWorkerActivity and getAwaitingAction never name the same stage for the same input", () => {
+    const poStatuses = [
+      undefined,
+      "DRAFT",
+      "PENDING_APPROVAL",
+      "APPROVED",
+      "REJECTED",
+      "SHIPPED",
+      "RECEIVED",
+      "COMPLETED",
+    ] as const;
+    const invoiceStatuses = [undefined, null, ...ALL_INVOICE_STATUSES] as const;
+
+    for (const reqStatus of ALL_REQUISITION_STATUSES) {
+      for (const poStatus of poStatuses) {
+        for (const invoiceStatus of invoiceStatuses) {
+          const purchaseOrder = poStatus ? makePo(poStatus) : null;
+          const working = getWorkerActivity(
+            { status: reqStatus, requirement: REQUIREMENT, sourcing: SOURCING, purchaseOrder },
+            invoiceStatus
+          );
+          const awaiting = getAwaitingAction({ status: reqStatus, purchaseOrder }, invoiceStatus);
+          if (working && awaiting) {
+            assert.notEqual(
+              working.stageId,
+              awaiting.stageId,
+              `${reqStatus}/${poStatus}/${invoiceStatus}`
+            );
+          }
+        }
+      }
+    }
   });
 });
 

@@ -4,18 +4,28 @@ import type { ReactNode } from "react";
 interface PageHeaderProps {
   title: string;
   description?: string;
+  /** Extra classes for the description line — e.g. "line-clamp-2" for unbounded text. */
+  descriptionClassName?: string;
   /** Right-aligned action buttons or controls */
   actions?: ReactNode;
   className?: string;
 }
 
-export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  description,
+  descriptionClassName,
+  actions,
+  className,
+}: PageHeaderProps) {
   return (
     <div className={cn("flex items-start justify-between gap-4 pb-4", className)}>
       <div className="min-w-0 flex-1 space-y-0.5">
         <h1 className="text-lg font-semibold tracking-tight truncate">{title}</h1>
         {description && (
-          <p className="text-sm text-muted-foreground leading-snug">{description}</p>
+          <p className={cn("text-sm text-muted-foreground leading-snug", descriptionClassName)}>
+            {description}
+          </p>
         )}
       </div>
       {actions && (

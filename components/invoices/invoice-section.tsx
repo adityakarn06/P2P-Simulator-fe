@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonLines } from "@/components/common/loading-state";
 import { InlineError } from "@/components/common/error-state";
 import { EmptyState } from "@/components/common/empty-state";
 import { useInvoiceSection } from "@/hooks/use-invoice-section";
@@ -43,11 +43,7 @@ export function InvoiceSection({ requisitionId, purchaseOrder }: InvoiceSectionP
       )}
 
       {invoices.isLoading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
+        <SkeletonLines />
       ) : invoices.isError ? (
         <InlineError error={invoices.error} />
       ) : !invoices.data || invoices.data.items.length === 0 ? (

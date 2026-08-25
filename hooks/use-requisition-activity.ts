@@ -86,10 +86,16 @@ export function useRequisitionActivity(requisition: Requisition) {
     })),
   });
 
+  // useQueries returns a fresh array every render (no `combine` passed, so
+  // TanStack's replaceEqualDeep never applies) — memoizing directly on
+  // `exceptionQueries` would recompute every render and defeat the `targets`
+  // memo below it. Fingerprint on each query's last-updated timestamp
+  // instead, which is stable between fetches.
+  const exceptionSignature = exceptionQueries.map((q) => q.dataUpdatedAt).join(",");
   const exceptionIds = useMemo(
-    () =>
-      exceptionQueries.flatMap((q) => q.data?.items.map((e) => e.id) ?? []),
-    [exceptionQueries]
+    () => exceptionQueries.flatMap((q) => q.data?.items.map((e) => e.id) ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- exceptionSignature stands in for exceptionQueries' contents
+    [exceptionSignature]
   );
 
   const targets = useMemo(
@@ -125,6 +131,12 @@ export function useRequisitionActivity(requisition: Requisition) {
     [targets, extraCursors]
   );
 
+  // Parallels the flatMap below 1:1, so `auditQueries[i]` and
+  // `isFirstPage[i]` always refer to the same query — used to tell a
+  // target's live first page (which drives `isLoading`) apart from an
+  // older, paged-in page (which drives `isLoadingMore` instead).
+  const isFirstPage = targets.flatMap((_, i) => targetPageCursors[i].map((cursor) => cursor === undefined));
+
   const auditQueries = useQueries({
     queries: targets.flatMap((target, i) =>
       targetPageCursors[i].map((cursor) => {
@@ -146,18 +158,18 @@ export function useRequisitionActivity(requisition: Requisition) {
   });
 
   // Regroup the flat query-result array back per target so nextCursor / more
-  // pages can be resolved per entity.
-  const targetQueryGroups = useMemo(() => {
-    const pageCounts = targetPageCursors.map((cursors) => cursors.length);
-    const groupStarts = pageCounts.reduce<number[]>((starts, count, i) => {
-      starts.push(i === 0 ? 0 : starts[i - 1] + pageCounts[i - 1]);
-      return starts;
-    }, []);
-    return targets.map((target, i) => ({
-      target,
-      group: auditQueries.slice(groupStarts[i], groupStarts[i] + pageCounts[i]),
-    }));
-  }, [targets, targetPageCursors, auditQueries]);
+  // pages can be resolved per entity. Not a useMemo: `auditQueries` is a
+  // fresh array from useQueries on every render, so memoizing on it would
+  // never actually hit — this recomputes every render, same as the memo did.
+  const pageCounts = targetPageCursors.map((cursors) => cursors.length);
+  const groupStarts = pageCounts.reduce<number[]>((starts, count, i) => {
+    starts.push(i === 0 ? 0 : starts[i - 1] + pageCounts[i - 1]);
+    return starts;
+  }, []);
+  const targetQueryGroups = targets.map((target, i) => ({
+    target,
+    group: auditQueries.slice(groupStarts[i], groupStarts[i] + pageCounts[i]),
+  }));
 
   const hasMoreAudit = targetQueryGroups.some(({ group }) => {
     const last = group[group.length - 1];
@@ -179,20 +191,37 @@ export function useRequisitionActivity(requisition: Requisition) {
     });
   };
 
+  // mergeAuditLogs does a Map insert + localeCompare sort over every row
+  // across every target's every page — worth memoizing given this hook
+  // recomputes on every ~1s poll tick. Same "fresh array every render"
+  // caveat as exceptionIds above: fingerprint on dataUpdatedAt instead of
+  // depping on `auditQueries` directly.
+  const auditSignature = auditQueries.map((q) => q.dataUpdatedAt).join(",");
   const rows: AuditLog[] = useMemo(
     () => mergeAuditLogs(auditQueries.map((q) => q.data?.items ?? [])),
-    [auditQueries]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auditSignature stands in for auditQueries' contents
+    [auditSignature]
   );
 
   // Resolving the fan-out targets (shipments/receipts/invoices/exceptions)
   // and the audit rows themselves are both "loading" from the caller's
-  // perspective — the timeline has nothing to show until both settle.
+  // perspective — the timeline has nothing to show until both settle. Only
+  // each target's first (live) page counts: paging in an older page via
+  // "Show more" must not flip the whole timeline back to a loading state.
   const resolvingTargets =
     (Boolean(purchaseOrderId) && (shipments.isLoading || receipts.isLoading || invoices.isLoading)) ||
     exceptionQueries.some((q) => q.isLoading);
-  const isLoading = resolvingTargets || (targets.length > 0 && auditQueries.some((q) => q.isLoading));
+  const isLoading =
+    resolvingTargets ||
+    (targets.length > 0 && auditQueries.some((q, i) => isFirstPage[i] && q.isLoading));
 
-  const isFetching = auditQueries.some((q) => q.isFetching);
+  // True only for the span between a "Show more" click and the resulting
+  // fetch landing. `isPending` (no cached data yet) rather than `isFetching`
+  // (also true for ambient background refetches) — and, crucially, false
+  // immediately for a page already in the cache, so this can't latch true
+  // forever the way a `prevIsFetching` render-phase comparison could when a
+  // fetch never observably transitions.
+  const isLoadingMore = auditQueries.some((q, i) => !isFirstPage[i] && q.isPending);
 
   // Target resolution (shipments/receipts/invoices/exceptions) failing means
   // the fan-out itself is incomplete or wrong — that's worth surfacing even
@@ -217,5 +246,5 @@ export function useRequisitionActivity(requisition: Requisition) {
     auditQueries.forEach((q) => q.refetch());
   };
 
-  return { rows, isLoading, isFetching, isError, error, refetch, hasMoreAudit, loadMoreAudit };
+  return { rows, isLoading, isLoadingMore, isError, error, refetch, hasMoreAudit, loadMoreAudit };
 }

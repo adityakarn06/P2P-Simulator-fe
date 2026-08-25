@@ -21,6 +21,15 @@ export const resolveReasonSchema = z
   .max(1000, "Reason must be 1000 characters or fewer.");
 
 /**
+ * Refresh cadence for exception lists — backend-docs/exceptions-api.md calls
+ * this "the primary read for 'what needs my attention'". No sockets, so
+ * poll. Shared by the exceptions inbox (hooks/use-exception-list.ts) and the
+ * per-invoice alert on /requisitions/[id]
+ * (components/exceptions/requisition-exception-alert.tsx).
+ */
+export const EXCEPTION_POLL_MS = 10_000;
+
+/**
  * True only while OPEN or UNDER_REVIEW. An exception's status is terminal
  * once it leaves either — resolving again is always a 409 INVALID_STATE,
  * never a replayed 200, so the resolve UI must be disabled rather than

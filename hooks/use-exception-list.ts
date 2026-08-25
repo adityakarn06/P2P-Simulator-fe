@@ -4,6 +4,7 @@ import { useExceptions } from "@/hooks/use-exceptions";
 import { useExceptionStore } from "@/store/exception-store";
 import type { ExceptionListTab } from "@/store/exception-store";
 import type { ExceptionStatus } from "@/types/models";
+import { EXCEPTION_POLL_MS } from "@/lib/state/exception-state";
 
 const TAB_STATUS_MAP: Record<ExceptionListTab, ExceptionStatus | undefined> = {
   open: "OPEN",
@@ -13,10 +14,6 @@ const TAB_STATUS_MAP: Record<ExceptionListTab, ExceptionStatus | undefined> = {
   all: undefined,
 };
 
-// Refresh cadence for the inbox — backend-docs/exceptions-api.md calls this
-// "the primary read for 'what needs my attention'". No sockets, so poll.
-const INBOX_POLL_MS = 10_000;
-
 export function useExceptionList() {
   const activeTab = useExceptionStore((s) => s.activeTab);
   const setActiveTab = useExceptionStore((s) => s.setActiveTab);
@@ -24,7 +21,7 @@ export function useExceptionList() {
 
   const query = useExceptions(
     status ? { status, limit: 50 } : { limit: 50 },
-    { refetchInterval: INBOX_POLL_MS }
+    { refetchInterval: EXCEPTION_POLL_MS }
   );
 
   return { activeTab, setActiveTab, ...query };

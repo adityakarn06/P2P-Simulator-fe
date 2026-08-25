@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/common/loading-state";
 import { ActivityTimeline } from "@/components/workflow/activity-timeline";
 import { useRequisitionActivity } from "@/hooks/use-requisition-activity";
 import type { Requisition } from "@/types/models";
@@ -21,7 +22,7 @@ const SHOW_MORE_STEP = 20;
  * a collapsed section.
  */
 export function RequisitionActivity({ requisition }: RequisitionActivityProps) {
-  const { rows, isLoading, isError, error, hasMoreAudit, loadMoreAudit } =
+  const { rows, isLoading, isLoadingMore, isError, error, refetch, hasMoreAudit, loadMoreAudit } =
     useRequisitionActivity(requisition);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
 
@@ -38,13 +39,32 @@ export function RequisitionActivity({ requisition }: RequisitionActivityProps) {
 
   return (
     <div className="space-y-4">
-      <ActivityTimeline rows={visibleRows} isLoading={isLoading} isError={isError} error={error} />
+      <ActivityTimeline
+        rows={visibleRows}
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        onRetry={refetch}
+      />
 
-      {hasMore && (
-        <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={handleShowMore}>
-            Show more
-          </Button>
+      {!isLoading && !isError && rows.length > 0 && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-muted-foreground">
+            Showing {visibleRows.length} of {rows.length}
+            {hasMoreAudit ? "+" : ""}
+          </p>
+          {hasMore && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleShowMore}
+              disabled={isLoadingMore}
+              className="gap-2"
+            >
+              {isLoadingMore && <Spinner size="sm" />}
+              Show more
+            </Button>
+          )}
         </div>
       )}
     </div>

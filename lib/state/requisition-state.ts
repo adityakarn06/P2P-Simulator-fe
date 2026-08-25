@@ -1,5 +1,5 @@
 import { formatStatus } from "@/lib/formatters";
-import { canUploadInvoice } from "@/lib/state/invoice-state";
+import { canUploadInvoice, getInvoicePollInterval } from "@/lib/state/invoice-state";
 import type { WorkflowStage } from "@/components/workflow/workflow-step";
 import type { Requisition, RequisitionStatus, InvoiceStatus } from "@/types/models";
 
@@ -117,6 +117,135 @@ type StageId =
   | "invoice"
   | "matching"
   | "payment";
+
+export interface StageActivity {
+  stageId: StageId;
+  label: string;
+}
+
+/**
+ * The one thing allowed to drive an animated "worker is running" indicator on
+ * /requisitions/[id]. Returns non-null ONLY while a backend job is genuinely
+ * in flight — never for a state that is waiting on a human (those belong to
+ * `getAwaitingAction` below, and must never look like machine progress).
+ *
+ * The guarantee is structural, not a hand-maintained status list: the
+ * requisition branch is gated on `isPolling(status)` — the same predicate
+ * that drives this screen's own `refetchInterval`
+ * (hooks/use-requisition-detail.ts) — and the invoice branch on
+ * `getInvoicePollInterval(status) !== false`. If a status stops being
+ * polled, its spinner stops with it.
+ *
+ * Polling is necessary but NOT sufficient: `EXCEPTION` also keeps polling
+ * (lib/state/invoice-state.ts) even though nothing is running — it only
+ * clears once a human resolves the exception on /exceptions/:id
+ * (backend-docs/exceptions-api.md). That case is excluded here and handled
+ * by `getAwaitingAction` instead.
+ *
+ * Which stage is "running" is derived from the presence of real backend
+ * objects (`requirement` → `sourcing` → `purchaseOrder`), never from the
+ * status string alone — same doctrine as `deriveWorkflowStages`. This is
+ * also what correctly resolves the completion-turn trap (status stays
+ * `PROCESSING` once requirements are extracted — see the file header) to
+ * "Supplier discovery…" rather than "AI processing…".
+ *
+ * No percentages, no ETA — the backend exposes no progress signal for any
+ * of these jobs.
+ */
+export function getWorkerActivity(
+  req: Pick<Requisition, "status" | "requirement" | "sourcing" | "purchaseOrder">,
+  latestInvoiceStatus?: InvoiceStatus | null
+): StageActivity | null {
+  if (isPolling(req.status)) {
+    if (req.requirement == null) {
+      return { stageId: "requirements", label: "AI processing…" };
+    }
+    if (req.sourcing == null) {
+      return { stageId: "sourcing", label: "Supplier discovery…" };
+    }
+    if (req.purchaseOrder == null) {
+      return { stageId: "purchase-order", label: "Generating PO…" };
+    }
+    // A PO already exists while still polling — a one-tick race before
+    // status flips to PO_CREATED. Nothing requisition-side is running;
+    // fall through to the invoice check below.
+  }
+
+  if (latestInvoiceStatus == null) return null;
+  // Necessary-but-not-sufficient check: EXCEPTION also returns a number here
+  // (see doc comment above), so it must not be handled by this switch.
+  if (getInvoicePollInterval(latestInvoiceStatus) === false) return null;
+
+  switch (latestInvoiceStatus) {
+    case "UPLOADED":
+    case "PROCESSING":
+      return { stageId: "invoice", label: "Extracting invoice…" };
+    case "EXTRACTED":
+    case "MATCHING":
+      return { stageId: "matching", label: "Checking invoice…" };
+    case "APPROVED":
+      return { stageId: "payment", label: "Payment processing…" };
+    default:
+      // EXCEPTION: polling but blocked on a human — see getAwaitingAction.
+      return null;
+  }
+}
+
+/**
+ * The mirror of `getWorkerActivity`: the single step currently blocked on
+ * the user, so the UI can show a static "awaiting you" chip instead of an
+ * animated one. By construction the two functions never name the same
+ * stage for the same input — every branch here corresponds to a status
+ * `getWorkerActivity` deliberately does not poll (or, for EXCEPTION, polls
+ * for a reason other than a worker running).
+ */
+export function getAwaitingAction(
+  req: Pick<Requisition, "status" | "purchaseOrder">,
+  latestInvoiceStatus?: InvoiceStatus | null
+): StageActivity | null {
+  // A failed requisition is never blocked on the user — it has its own
+  // failed-stage UI (see the FAILED override in deriveWorkflowStages), not
+  // an "awaiting you" chip on a step that will never move forward.
+  if (req.status === "FAILED") return null;
+
+  const po = req.purchaseOrder;
+
+  // Matching found a mismatch; only a human resolving it on /exceptions/:id
+  // moves it forward (backend-docs/exceptions-api.md). Checked first since
+  // it can coexist with an earlier PO/shipment state.
+  if (latestInvoiceStatus === "EXCEPTION") {
+    return { stageId: "matching", label: "Awaiting your review" };
+  }
+
+  if (po != null) {
+    if (po.status === "PENDING_APPROVAL") {
+      return { stageId: "purchase-order", label: "Awaiting your approval" };
+    }
+    // Delivery only advances via POST /receipts/simulate — no carrier
+    // integration, no timer (backend-docs/shipments-api.md).
+    if (po.status === "APPROVED" || po.status === "SHIPPED") {
+      return { stageId: "shipment", label: "Awaiting delivery simulation" };
+    }
+    // PO can be invoiced and the invoices list has resolved empty (`null`,
+    // not the unresolved `undefined`) — mirrors the note already attached
+    // to the Invoice stage in deriveWorkflowStages.
+    if (
+      latestInvoiceStatus === null &&
+      (po.status === "RECEIVED" || po.status === "COMPLETED")
+    ) {
+      return { stageId: "invoice", label: "Awaiting invoice upload" };
+    }
+    return null;
+  }
+
+  // The clarification loop: composer is open and the backend 409s any
+  // message once status moves past this.
+  if (req.status === "NEEDS_CLARIFICATION") {
+    return { stageId: "requirements", label: "Awaiting your reply" };
+  }
+
+  return null;
+}
 
 /**
  * Maps real requisition state to WorkflowStage[] for WorkflowTimeline.
@@ -291,11 +420,37 @@ export function deriveWorkflowStages(
     },
   ];
 
+  // Attach the "what's happening right now" caption to whichever stage it
+  // names. The two functions are designed to never name the same stage for
+  // the same input, so both are attached independently rather than treating
+  // worker activity as suppressing awaiting-action — a PO already APPROVED
+  // and an invoice already extracting are two different, simultaneously
+  // true captions on two different stages (shipment vs. invoice).
+  const awaitingAction = getAwaitingAction(req, latestInvoiceStatus);
+  if (awaitingAction) {
+    const target = stages.find((s) => s.id === awaitingAction.stageId);
+    if (target) {
+      target.activity = { label: awaitingAction.label, variant: "awaiting" };
+    }
+  }
+  const workerActivity = getWorkerActivity(req, latestInvoiceStatus);
+  if (workerActivity) {
+    const target = stages.find((s) => s.id === workerActivity.stageId);
+    if (target) {
+      target.activity = { label: workerActivity.label, variant: "working" };
+    }
+  }
+
   if (req.status === "FAILED" && !poRejected) {
     const firstIncomplete = stages.find((s) => s.status !== "completed");
     if (firstIncomplete) {
       firstIncomplete.status = "failed";
       firstIncomplete.note = req.failureReason ?? "This step failed.";
+      // A stage can't render as both failed and captioned with a stale
+      // "awaiting"/"working" label — getAwaitingAction already returns null
+      // for FAILED, but this covers a worker-activity caption reused from a
+      // stale render.
+      firstIncomplete.activity = null;
     }
   }
 

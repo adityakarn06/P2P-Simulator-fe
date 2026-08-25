@@ -16,7 +16,7 @@ export function WorkflowTimeline({ stages, className }: WorkflowTimelineProps) {
   if (stages.length === 0) return null;
 
   return (
-    <div className={cn("space-y-0", className)}>
+    <ol className={cn("space-y-0", className)} aria-label="Workflow progress">
       {stages.map((stage, idx) => (
         <WorkflowStep
           key={stage.id}
@@ -24,7 +24,7 @@ export function WorkflowTimeline({ stages, className }: WorkflowTimelineProps) {
           isLast={idx === stages.length - 1}
         />
       ))}
-    </div>
+    </ol>
   );
 }
 

@@ -1,8 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon, ArrowUp01Icon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -34,31 +33,35 @@ export function WorkflowSection({
   className,
 }: WorkflowSectionProps) {
   const { open, toggle } = useWorkflowSection(sectionId, defaultOpen);
+  const contentId = `${sectionId}-content`;
 
   return (
     <Card className={cn("gap-0", className)}>
-      <CardHeader
-        className="cursor-pointer select-none flex-row items-center justify-between gap-2"
-        onClick={toggle}
-      >
-        <div className="flex items-center gap-2">
-          <CardTitle>{title}</CardTitle>
-          {status}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6 shrink-0"
-          aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
+      <CardHeader className="flex-row items-center justify-between gap-2">
+        <button
+          type="button"
+          className="flex flex-1 cursor-pointer select-none items-center justify-between gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-expanded={open}
+          aria-controls={open ? contentId : undefined}
+          onClick={toggle}
         >
-          <HugeiconsIcon icon={open ? ArrowUp01Icon : ArrowDown01Icon} className="size-4" />
-        </Button>
+          {/* Not <CardTitle> here — it renders a <div>, and a <div> inside
+              <button> (phrasing content only) is invalid HTML. Same visual
+              styling, a <span> instead. */}
+          <span className="font-heading text-sm font-medium">{title}</span>
+          <HugeiconsIcon
+            icon={open ? ArrowUp01Icon : ArrowDown01Icon}
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </button>
+        {status}
       </CardHeader>
-      {open && <CardContent className="pt-4">{children}</CardContent>}
+      {open && (
+        <CardContent id={contentId} className="pt-4">
+          {children}
+        </CardContent>
+      )}
     </Card>
   );
 }

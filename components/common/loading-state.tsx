@@ -53,6 +53,32 @@ export function SkeletonCard({ className }: { className?: string }) {
   );
 }
 
+const DEFAULT_LINE_WIDTHS = ["w-1/3", "w-2/3", "w-1/2"];
+
+/**
+ * A handful of skeleton text lines, no card chrome. Replaces the ad-hoc
+ * three-`Skeleton` block duplicated across invoice-section, shipment-section
+ * and activity-timeline while a section's data is loading.
+ */
+export function SkeletonLines({
+  lines = 3,
+  className,
+}: {
+  lines?: number;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-3", className)}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <Skeleton
+          key={i}
+          className={cn("h-4", DEFAULT_LINE_WIDTHS[i % DEFAULT_LINE_WIDTHS.length])}
+        />
+      ))}
+    </div>
+  );
+}
+
 interface SkeletonTableProps {
   rows?: number;
   columns?: number;

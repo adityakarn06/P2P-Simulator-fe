@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/common/status-badge";
 import { InlineError } from "@/components/common/error-state";
 import { EmptyState } from "@/components/common/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonLines } from "@/components/common/loading-state";
 import { GoodsReceiptSummary } from "@/components/shipments/goods-receipt-summary";
 import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useShipment } from "@/hooks/use-shipments";
@@ -67,13 +67,7 @@ export function ShipmentDetailCard({ shipmentListItem }: ShipmentDetailCardProps
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {shipment.isLoading && (
-          <div className="space-y-3">
-            <Skeleton className="h-4 w-1/3" />
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-        )}
+        {shipment.isLoading && <SkeletonLines />}
 
         {shipment.isError && <InlineError error={shipment.error} />}
 

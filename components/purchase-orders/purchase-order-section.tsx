@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Money } from "@/components/common/money";
 import { InlineError } from "@/components/common/error-state";
 import { Spinner } from "@/components/common/loading-state";
+import { Callout } from "@/components/common/callout";
 import { formatDate } from "@/lib/formatters";
 import { isAwaitingApproval, isRejected, formatTaxRate, PO_APPROVAL_PROMPT } from "@/lib/state/purchase-order-state";
 import { usePurchaseOrderActions } from "@/hooks/use-purchase-order-actions";
@@ -51,13 +52,13 @@ export function PurchaseOrderSection({
   return (
     <div className="space-y-4">
       {awaitingApproval && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
-          <p className="text-sm font-medium">{PO_APPROVAL_PROMPT}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+        <Callout tone="progress">
+          <p className="font-medium text-foreground">{PO_APPROVAL_PROMPT}</p>
+          <p className="text-xs text-muted-foreground">
             {purchaseOrder.poNumber} · {purchaseOrder.supplier.name} ·{" "}
             <Money paise={purchaseOrder.totalPaise} />
           </p>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-2">
             <Button disabled={actionsDisabled} onClick={handleApprove} className="gap-1.5">
               {approve.isPending && <Spinner size="sm" />}
               Approve PO
@@ -70,8 +71,8 @@ export function PurchaseOrderSection({
               Reject PO
             </Button>
           </div>
-          {approve.error != null && <InlineError error={approve.error} className="mt-2" />}
-        </div>
+          {approve.error != null && <InlineError error={approve.error} />}
+        </Callout>
       )}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -111,44 +112,55 @@ export function PurchaseOrderSection({
       </div>
 
       {isRejected(purchaseOrder) && purchaseOrder.rejectionReason && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-          <p className="text-xs font-medium text-destructive">Rejection reason</p>
-          <p className="text-sm text-destructive">{purchaseOrder.rejectionReason}</p>
-        </div>
+        <Callout tone="error">
+          <p className="text-xs font-medium">Rejection reason</p>
+          <p>{purchaseOrder.rejectionReason}</p>
+        </Callout>
       )}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Description</TableHead>
-            <TableHead className="text-right">Qty</TableHead>
-            <TableHead className="text-right">Unit Price</TableHead>
-            <TableHead className="text-right">Line Total</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {purchaseOrder.items.length === 0 ? (
+      <div className="rounded-md border">
+        <Table>
+          <caption className="sr-only">Purchase order line items</caption>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                No line items.
-              </TableCell>
+              <TableHead scope="col">Description</TableHead>
+              <TableHead scope="col" className="text-right">
+                Qty
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Unit Price
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Line Total
+              </TableHead>
             </TableRow>
-          ) : (
-            purchaseOrder.items.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-medium text-foreground">{item.description}</TableCell>
-                <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                <TableCell className="text-right">
-                  <Money paise={item.unitPricePaise} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Money paise={item.lineTotalPaise} />
+          </TableHeader>
+          <TableBody>
+            {purchaseOrder.items.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  No line items.
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              purchaseOrder.items.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium text-foreground">
+                    {item.description}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+                  <TableCell className="text-right">
+                    <Money paise={item.unitPricePaise} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Money paise={item.lineTotalPaise} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       <div className="ml-auto w-full max-w-[220px] space-y-1 text-sm">
         <div className="flex justify-between text-muted-foreground">
