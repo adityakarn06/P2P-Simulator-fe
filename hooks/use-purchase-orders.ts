@@ -15,7 +15,7 @@ import {
   type RejectPurchaseOrderBody,
 } from "@/lib/api/purchase-orders";
 import type { PurchaseOrder } from "@/types/models";
-import type { CursorPaginatedData } from "@/types/api";
+import { ApiError, type CursorPaginatedData } from "@/types/api";
 import { requisitionKeys } from "@/hooks/use-requisitions";
 
 export const purchaseOrderKeys = {
@@ -65,12 +65,37 @@ export function usePurchaseOrders(
 }
 
 /**
- * Approves a purchase order. Idempotent.
  * Invalidates the PO detail + list, and — when called with a
  * `requisitionId` (e.g. from /requisitions/[id]) — the owning requisition's
  * detail query too, since `requisitionKeys.detail(id)` lives outside the
  * `requisitionKeys.all` namespace and is never reached by a broader
  * invalidation.
+ */
+function invalidatePurchaseOrder(
+  queryClient: ReturnType<typeof useQueryClient>,
+  variables: { id: string; requisitionId?: string }
+) {
+  queryClient.invalidateQueries({
+    queryKey: purchaseOrderKeys.detail(variables.id),
+  });
+  queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
+  if (variables.requisitionId) {
+    queryClient.invalidateQueries({
+      queryKey: requisitionKeys.detail(variables.requisitionId),
+    });
+    queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+  }
+}
+
+/**
+ * Approves a purchase order. Idempotent — a retry of an already-`APPROVED`
+ * PO returns 200 with the same result, so it flows through onSuccess as a
+ * normal success.
+ *
+ * On a 409 (someone else already approved/rejected it — see
+ * backend-docs/purchase-orders-api.md), the same invalidation runs so the
+ * UI reflects the real, current state instead of showing a stale
+ * PENDING_APPROVAL row next to an error toast.
  */
 export function useApprovePurchaseOrder() {
   const queryClient = useQueryClient();
@@ -81,16 +106,10 @@ export function useApprovePurchaseOrder() {
     { id: string; requisitionId?: string }
   >({
     mutationFn: ({ id }) => approvePurchaseOrder(id),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: purchaseOrderKeys.detail(variables.id),
-      });
-      queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
-      if (variables.requisitionId) {
-        queryClient.invalidateQueries({
-          queryKey: requisitionKeys.detail(variables.requisitionId),
-        });
-        queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+    onSuccess: (_data, variables) => invalidatePurchaseOrder(queryClient, variables),
+    onError: (error, variables) => {
+      if (error instanceof ApiError && (error.isConflict || error.isNotFound)) {
+        invalidatePurchaseOrder(queryClient, variables);
       }
     },
   });
@@ -98,7 +117,7 @@ export function useApprovePurchaseOrder() {
 
 /**
  * Rejects a purchase order with a required reason. Idempotent.
- * Same invalidation shape as useApprovePurchaseOrder — see its comment.
+ * Same invalidation shape as useApprovePurchaseOrder — see its comments.
  */
 export function useRejectPurchaseOrder() {
   const queryClient = useQueryClient();
@@ -109,16 +128,10 @@ export function useRejectPurchaseOrder() {
     { id: string; requisitionId?: string } & RejectPurchaseOrderBody
   >({
     mutationFn: ({ id, reason }) => rejectPurchaseOrder(id, { reason }),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: purchaseOrderKeys.detail(variables.id),
-      });
-      queryClient.invalidateQueries({ queryKey: purchaseOrderKeys.lists() });
-      if (variables.requisitionId) {
-        queryClient.invalidateQueries({
-          queryKey: requisitionKeys.detail(variables.requisitionId),
-        });
-        queryClient.invalidateQueries({ queryKey: requisitionKeys.lists() });
+    onSuccess: (_data, variables) => invalidatePurchaseOrder(queryClient, variables),
+    onError: (error, variables) => {
+      if (error instanceof ApiError && (error.isConflict || error.isNotFound)) {
+        invalidatePurchaseOrder(queryClient, variables);
       }
     },
   });

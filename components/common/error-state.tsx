@@ -25,6 +25,7 @@ const errorIconMap = {
   auth: Cancel01Icon,
   notFound: File01Icon,
   validation: Alert01Icon,
+  conflict: RefreshIcon,
   server: Alert01Icon,
   unknown: Alert01Icon,
 } as const;

@@ -377,6 +377,18 @@ describe("deriveWorkflowStages", () => {
     }
   });
 
+  test("SUPPLIER_SELECTED, no PO yet: purchase-order stage active", () => {
+    const stages = deriveWorkflowStages({
+      status: "SUPPLIER_SELECTED",
+      requirement: null,
+      sourcing: { decidedAt: "2026-08-24T00:00:00.000Z" } as Sourcing,
+      purchaseOrder: null,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    assert.equal(stages.find((s) => s.id === "purchase-order")!.status, "active");
+  });
+
   test("FAILED: first incomplete stage marked failed with the failure reason as its note", () => {
     const stages = deriveWorkflowStages({
       status: "FAILED",

@@ -1,5 +1,4 @@
 export * from "@/store/requisition-store";
-export * from "@/store/purchase-order-store";
 export * from "@/store/exception-store";
 export * from "@/store/invoice-store";
 export * from "@/store/activity-store";

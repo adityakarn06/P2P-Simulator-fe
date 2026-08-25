@@ -61,9 +61,14 @@ export function RejectPoDialog({
               validationError && "border-destructive"
             )}
           />
-          {validationError && (
-            <p className="text-xs text-destructive">{validationError}</p>
-          )}
+          <div className="flex items-center justify-between">
+            {validationError ? (
+              <p className="text-xs text-destructive">{validationError}</p>
+            ) : (
+              <span />
+            )}
+            <p className="text-xs text-muted-foreground">{reason.trim().length}/500</p>
+          </div>
           {error != null && <InlineError error={error} />}
         </div>
 
@@ -80,7 +85,7 @@ export function RejectPoDialog({
             variant="destructive"
             size="sm"
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={isPending || reason.trim().length === 0}
             className="gap-1.5"
           >
             {isPending && <Spinner size="sm" />}
