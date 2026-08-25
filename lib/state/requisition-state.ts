@@ -457,4 +457,25 @@ export function deriveWorkflowStages(
   return stages;
 }
 
+export interface WorkflowProgress {
+  /** Number of stages with status "completed". A "failed" stage does not count as completed. */
+  completed: number;
+  /** Total number of stages in the workflow (never hardcoded — the length of the derived array). */
+  total: number;
+  /** Rounded percentage of stages completed, 0-100. */
+  percent: number;
+}
+
+/**
+ * Session-wide P2P workflow completion, derived from the same
+ * `deriveWorkflowStages` output the timeline renders — so the progress
+ * gauge and the timeline can never disagree about what's done.
+ */
+export function getWorkflowProgress(stages: WorkflowStage[]): WorkflowProgress {
+  const total = stages.length;
+  const completed = stages.filter((s) => s.status === "completed").length;
+  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  return { completed, total, percent };
+}
+
 export type { StageId };

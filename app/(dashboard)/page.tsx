@@ -198,38 +198,6 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-6 shadow-xs">
-        <h3 className="text-sm font-semibold text-card-foreground mb-2">
-          Procurement Overview
-        </h3>
-        <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-2xl">
-          Manage your procurement lifecycle across requisitions, supplier sourcing,
-          purchase orders, invoices and payments.
-        </p>
-
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Quick Actions
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/requisitions/new"
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Create Requisition
-            </Link>
-            <Link
-              href="/purchase-orders"
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-accent transition-colors shadow-xs"
-            >
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              View Purchase Orders
-            </Link>
-          </div>
-        </div>
-      </div>
-
       {/* Recent requisitions */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">

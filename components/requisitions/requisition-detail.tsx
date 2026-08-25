@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Callout } from "@/components/common/callout";
 import { WorkflowTimeline } from "@/components/workflow/workflow-timeline";
+import { WorkflowProgressGauge } from "@/components/workflow/workflow-progress-gauge";
 import { WorkflowSection } from "@/components/workflow/workflow-section";
 import { ProcessingIndicator } from "@/components/workflow/processing-indicator";
 import { ErrorState } from "@/components/common/error-state";
@@ -228,11 +229,12 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
           </WorkflowSection>
         </div>
 
-        <div className="mt-4 lg:sticky lg:top-4 lg:mt-0">
+        <div className="mt-4 flex flex-col gap-4 lg:sticky lg:top-4 lg:mt-0">
           <WorkflowTimeline
             stages={stages}
             className="rounded-lg border p-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
           />
+          <WorkflowProgressGauge stages={stages} />
         </div>
       </div>
     </div>

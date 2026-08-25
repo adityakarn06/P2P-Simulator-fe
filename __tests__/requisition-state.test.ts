@@ -33,6 +33,7 @@ import {
   formatDeliveryDeadline,
   getWorkerActivity,
   getAwaitingAction,
+  getWorkflowProgress,
 } from "@/lib/state/requisition-state";
 import { getInvoicePollInterval } from "@/lib/state/invoice-state";
 import type {
@@ -990,5 +991,42 @@ describe("missingFieldLabel", () => {
 
   test("falls back to formatStatus for an unknown field instead of throwing", () => {
     assert.equal(missingFieldLabel("some_unknown_field"), "Some Unknown Field");
+  });
+});
+
+describe("getWorkflowProgress", () => {
+  test("counts completed vs. total stages and rounds the percentage", () => {
+    const stages = deriveWorkflowStages({
+      status: "NEEDS_CLARIFICATION",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: null,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    // Only "Request" is completed out of 9 stages.
+    const progress = getWorkflowProgress(stages);
+    assert.equal(progress.total, stages.length);
+    assert.equal(progress.completed, 1);
+    assert.equal(progress.percent, Math.round((1 / stages.length) * 100));
+  });
+
+  test("returns 0% for an empty stage list without dividing by zero", () => {
+    assert.deepEqual(getWorkflowProgress([]), { completed: 0, total: 0, percent: 0 });
+  });
+
+  test("a failed stage does not count as completed", () => {
+    const stages = deriveWorkflowStages({
+      status: "FAILED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: null,
+      failureReason: "Something broke",
+      createdAt: CREATED_AT,
+    });
+    const progress = getWorkflowProgress(stages);
+    const failedCount = stages.filter((s) => s.status === "failed").length;
+    assert.equal(failedCount, 1);
+    assert.equal(progress.completed, stages.filter((s) => s.status === "completed").length);
   });
 });
