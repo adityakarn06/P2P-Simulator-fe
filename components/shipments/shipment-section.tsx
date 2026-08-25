@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/common/status-badge";
 import { InlineError } from "@/components/common/error-state";
@@ -13,6 +14,13 @@ import { SimulateDeliveryDialog } from "@/components/shipments/simulate-delivery
 import { GoodsReceiptSummary } from "@/components/shipments/goods-receipt-summary";
 import { PackageIcon } from "@/lib/icons";
 import type { PurchaseOrder } from "@/types/models";
+
+// mapbox-gl touches window at import time, so this must never render on the
+// server.
+const ShipmentMap = dynamic(
+  () => import("@/components/shipments/shipment-map").then((m) => m.ShipmentMap),
+  { ssr: false }
+);
 
 interface ShipmentSectionProps {
   requisitionId: string;
@@ -42,6 +50,8 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
     conflict,
     actionsDisabled,
     handleSimulateDelivery,
+    animating,
+    handleAnimationComplete,
   } = useShipmentSection(requisitionId, purchaseOrder);
 
   if (poDetail.isLoading) {
@@ -104,14 +114,28 @@ export function ShipmentSection({ requisitionId, purchaseOrder }: ShipmentSectio
 
       {isInTransit(s) && (
         <Callout tone="progress">
-          <p className="font-medium text-foreground">{IN_TRANSIT_MESSAGE}</p>
-          {canSimulate && (
-            <div className="pt-2">
-              <Button disabled={actionsDisabled} onClick={openDialog} className="gap-1.5">
-                Simulate Delivery
-              </Button>
-            </div>
-          )}
+          <div className="w-full space-y-2">
+            <p className="font-medium text-foreground">{IN_TRANSIT_MESSAGE}</p>
+            {animating ? (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">
+                  Simulating delivery — Delhi to Kolkata
+                </p>
+                <ShipmentMap
+                  onArrive={handleAnimationComplete}
+                  className="h-56 w-full overflow-hidden rounded-md border"
+                />
+              </div>
+            ) : (
+              canSimulate && (
+                <div className="pt-2">
+                  <Button disabled={actionsDisabled} onClick={openDialog} className="gap-1.5">
+                    Simulate Delivery
+                  </Button>
+                </div>
+              )
+            )}
+          </div>
         </Callout>
       )}
 

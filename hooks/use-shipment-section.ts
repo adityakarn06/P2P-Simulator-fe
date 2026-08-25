@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { usePurchaseOrder } from "@/hooks/use-purchase-orders";
 import { useShipment, useSimulateReceipt } from "@/hooks/use-shipments";
+import type { SimulateReceiptBody } from "@/lib/api/receipts";
 import {
   buildFlatReceiptBody,
   buildExplicitReceiptBody,
@@ -64,10 +65,14 @@ export function useShipmentSection(
   const [notes, setNotes] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<ReceiptConflict | null>(null);
+  const [pendingReceiptBody, setPendingReceiptBody] = useState<
+    SimulateReceiptBody | null
+  >(null);
 
   const orderedQuantity = purchaseOrder.items[0]?.quantity ?? 0;
 
-  const actionsDisabled = simulate.isPending || simulate.isSuccess;
+  const animating = pendingReceiptBody != null;
+  const actionsDisabled = simulate.isPending || simulate.isSuccess || animating;
 
   const canSimulate = shipment.data
     ? canSimulateDelivery({
@@ -153,37 +158,12 @@ export function useShipmentSection(
     setNotes(value);
   };
 
-  const handleSimulateDelivery = () => {
-    if (actionsDisabled || !shipmentId) return;
-
-    const body = multiLine
-      ? (() => {
-          const result = validateMultiLineReceiptForm(
-            { items: lineItems, notes },
-            purchaseOrder.items
-          );
-          if (!result.ok) {
-            setFieldErrors(result.errors);
-            return null;
-          }
-          return buildExplicitReceiptBody(shipmentId, result.values);
-        })()
-      : (() => {
-          const result = validateReceiptForm(
-            { receivedQuantity, damagedQuantity, notes },
-            orderedQuantity
-          );
-          if (!result.ok) {
-            setFieldErrors(result.errors);
-            return null;
-          }
-          return buildFlatReceiptBody(shipmentId, result.values);
-        })();
-
-    if (!body) return;
-    setFieldErrors({});
-    setConflict(null);
-
+  /**
+   * Fires the real POST /receipts/simulate mutation. Shared by the
+   * no-map fallback (mapbox token absent) and handleAnimationComplete
+   * (map present — this runs once the truck reaches Kolkata).
+   */
+  const submitReceipt = (body: SimulateReceiptBody) => {
     simulate.mutate(
       {
         body,
@@ -216,6 +196,57 @@ export function useShipmentSection(
         },
       }
     );
+  };
+
+  const handleSimulateDelivery = () => {
+    if (actionsDisabled || !shipmentId) return;
+
+    const body = multiLine
+      ? (() => {
+          const result = validateMultiLineReceiptForm(
+            { items: lineItems, notes },
+            purchaseOrder.items
+          );
+          if (!result.ok) {
+            setFieldErrors(result.errors);
+            return null;
+          }
+          return buildExplicitReceiptBody(shipmentId, result.values);
+        })()
+      : (() => {
+          const result = validateReceiptForm(
+            { receivedQuantity, damagedQuantity, notes },
+            orderedQuantity
+          );
+          if (!result.ok) {
+            setFieldErrors(result.errors);
+            return null;
+          }
+          return buildFlatReceiptBody(shipmentId, result.values);
+        })();
+
+    if (!body) return;
+    setFieldErrors({});
+    setConflict(null);
+
+    if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+      // No map available — record the delivery immediately, same as before
+      // the animation existed.
+      submitReceipt(body);
+      return;
+    }
+
+    // Hold the dialog's mutation until the truck arrives: close the dialog,
+    // show the map animation, and submit only once it fires onArrive.
+    setDialogOpen(false);
+    setPendingReceiptBody(body);
+  };
+
+  const handleAnimationComplete = () => {
+    if (!pendingReceiptBody) return;
+    const body = pendingReceiptBody;
+    setPendingReceiptBody(null);
+    submitReceipt(body);
   };
 
   const dialogItems = multiLine
@@ -254,5 +285,7 @@ export function useShipmentSection(
     conflict,
     actionsDisabled,
     handleSimulateDelivery,
+    animating,
+    handleAnimationComplete,
   };
 }
