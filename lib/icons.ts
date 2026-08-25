@@ -16,9 +16,11 @@ export { default as ArrowDown01Icon } from "@hugeicons/core-free-icons/ArrowDown
 export { default as ArrowLeft01Icon } from "@hugeicons/core-free-icons/ArrowLeft01Icon";
 export { default as ArrowRight01Icon } from "@hugeicons/core-free-icons/ArrowRight01Icon";
 export { default as ArrowUp01Icon } from "@hugeicons/core-free-icons/ArrowUp01Icon";
+export { default as AiSparklesIcon } from "@hugeicons/core-free-icons/AiSparklesIcon";
 export { default as Cancel01Icon } from "@hugeicons/core-free-icons/Cancel01Icon";
 export { default as CheckmarkCircle02Icon } from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
 export { default as CommandIcon } from "@hugeicons/core-free-icons/CommandIcon";
+export { default as CpuIcon } from "@hugeicons/core-free-icons/CpuIcon";
 export { default as CreditCardIcon } from "@hugeicons/core-free-icons/CreditCardIcon";
 export { default as DashboardSquare01Icon } from "@hugeicons/core-free-icons/DashboardSquare01Icon";
 export { default as File01Icon } from "@hugeicons/core-free-icons/File01Icon";

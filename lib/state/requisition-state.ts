@@ -266,7 +266,7 @@ export function deriveWorkflowStages(
       label: "Invoice",
       status: invoiceStageStatus(latestInvoiceStatus, poCanAcceptInvoice),
       note:
-        latestInvoiceStatus == null
+        latestInvoiceStatus === null
           ? poCanAcceptInvoice
             ? "Upload the supplier invoice to continue."
             : null

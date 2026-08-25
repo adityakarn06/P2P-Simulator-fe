@@ -14,68 +14,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatDateTime, formatRelativeTime, formatStatus } from "@/lib/formatters";
+import { formatDateTime, formatRelativeTime } from "@/lib/formatters";
 import { ActivityIcon } from "@/lib/icons";
 import { ACTIVITY_FILTER_ALL } from "@/store/activity-store";
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ACTOR_TYPES,
+  AUDIT_ENTITY_TYPES,
+  describeAuditLog,
+  getAuditActionLabel,
+  getAuditActorLabel,
+} from "@/lib/state/activity-state";
 import type { AuditAction, AuditActorType, AuditLog, EntityType } from "@/types/models";
 
-const ACTOR_TYPES: AuditActorType[] = ["SYSTEM", "AI", "USER"];
-
-const ENTITY_TYPES: EntityType[] = [
-  "Requisition",
-  "PurchaseOrder",
-  "Shipment",
-  "GoodsReceipt",
-  "Invoice",
-  "Exception",
-];
-
-const ACTIONS: AuditAction[] = [
-  "REQUISITION_CREATED",
-  "REQUISITION_CLARIFICATION_REQUESTED",
-  "REQUIREMENTS_EXTRACTED",
-  "SUPPLIERS_DISCOVERED",
-  "SUPPLIER_SELECTED",
-  "PO_CREATED",
-  "PO_APPROVED",
-  "PO_REJECTED",
-  "SHIPMENT_CREATED",
-  "GOODS_RECEIVED",
-  "INVOICE_UPLOADED",
-  "INVOICE_EXTRACTED",
-  "MATCH_STARTED",
-  "MATCH_COMPLETED",
-  "EXCEPTION_CREATED",
-  "EXCEPTION_RESOLVED",
-  "PAYMENT_APPROVED",
-  "PAYMENT_COMPLETED",
-  "WORKFLOW_FAILED",
-];
+const ACTOR_TYPES = AUDIT_ACTOR_TYPES;
+const ENTITY_TYPES = AUDIT_ENTITY_TYPES;
+const ACTIONS = AUDIT_ACTIONS;
 
 /** Renders metadata.stage for WORKFLOW_FAILED rows, else a compact key/value summary. */
 function MetadataSummary({ log }: { log: AuditLog }) {
-  const entries = Object.entries(log.metadata ?? {}).filter(
-    ([, value]) => value !== undefined && value !== null
-  );
-
-  if (entries.length === 0) {
+  const { detail } = describeAuditLog(log);
+  if (!detail) {
     return <span className="text-muted-foreground">—</span>;
   }
-
-  if (log.action === "WORKFLOW_FAILED" && typeof log.metadata.stage === "string") {
-    return (
-      <span className="text-xs text-muted-foreground">
-        Stage: <span className="font-mono">{log.metadata.stage}</span>
-      </span>
-    );
-  }
-
   return (
-    <span className="text-xs text-muted-foreground truncate block max-w-[220px]" title={JSON.stringify(log.metadata)}>
-      {entries
-        .slice(0, 2)
-        .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
-        .join(" · ")}
+    <span
+      className="text-xs text-muted-foreground truncate block max-w-[220px]"
+      title={JSON.stringify(log.metadata)}
+    >
+      {detail}
     </span>
   );
 }
@@ -97,7 +64,7 @@ const columns: AppColumnDef<AuditLog>[] = [
     accessorKey: "action",
     header: "Action",
     cell: ({ row }) => (
-      <span className="text-sm font-medium">{formatStatus(row.original.action)}</span>
+      <span className="text-sm font-medium">{describeAuditLog(row.original).label}</span>
     ),
   },
   {
@@ -105,7 +72,7 @@ const columns: AppColumnDef<AuditLog>[] = [
     header: "Actor",
     cell: ({ row }) => (
       <div className="text-xs">
-        <span className="text-muted-foreground">{formatStatus(row.original.actorType)}</span>
+        <span className="text-muted-foreground">{getAuditActorLabel(row.original.actorType)}</span>
         {row.original.actorId && (
           <p className="font-mono text-muted-foreground/80">{row.original.actorId}</p>
         )}
@@ -174,7 +141,7 @@ export default function ActivityPage() {
             <SelectItem value={ACTIVITY_FILTER_ALL}>All actors</SelectItem>
             {ACTOR_TYPES.map((t) => (
               <SelectItem key={t} value={t}>
-                {formatStatus(t)}
+                {getAuditActorLabel(t)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -202,7 +169,7 @@ export default function ActivityPage() {
             <SelectItem value={ACTIVITY_FILTER_ALL}>All actions</SelectItem>
             {ACTIONS.map((a) => (
               <SelectItem key={a} value={a}>
-                {formatStatus(a)}
+                {getAuditActionLabel(a)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -20,6 +20,7 @@ import { ShipmentSection } from "@/components/shipments/shipment-section";
 import { shouldShowShipmentSection } from "@/lib/state/shipment-state";
 import { InvoiceSection } from "@/components/invoices/invoice-section";
 import { shouldShowInvoiceSection } from "@/lib/state/invoice-state";
+import { RequisitionActivity } from "@/components/requisitions/requisition-activity";
 
 interface RequisitionDetailProps {
   id: string;
@@ -161,6 +162,14 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
           />
         </WorkflowSection>
       )}
+
+      <WorkflowSection
+        sectionId={`${requisition.id}:activity`}
+        title="Activity"
+        defaultOpen={false}
+      >
+        <RequisitionActivity requisition={requisition} />
+      </WorkflowSection>
     </div>
   );
 }

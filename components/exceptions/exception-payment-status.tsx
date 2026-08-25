@@ -3,8 +3,10 @@
 import { useInvoice } from "@/hooks/use-invoices";
 import { getInvoicePollInterval, getInvoiceStatusMessage } from "@/lib/state/invoice-state";
 import { Spinner } from "@/components/common/loading-state";
+import { InlineError } from "@/components/common/error-state";
+import { Button } from "@/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { CheckmarkCircle02Icon } from "@/lib/icons";
+import { CheckmarkCircle02Icon, RefreshIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
 interface ExceptionPaymentStatusProps {
@@ -18,13 +20,30 @@ interface ExceptionPaymentStatusProps {
  * components/invoices/invoice-detail.tsx) until it reaches PAID.
  */
 export function ExceptionPaymentStatus({ invoiceId }: ExceptionPaymentStatusProps) {
-  const { data: invoice } = useInvoice(invoiceId, {
+  const { data: invoice, isError, error, refetch } = useInvoice(invoiceId, {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status ? getInvoicePollInterval(status) : false;
     },
     staleTime: 0,
   });
+
+  if (isError) {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-lg border p-4 text-sm",
+          "border-destructive/40 bg-destructive/5"
+        )}
+      >
+        <InlineError error={error} className="flex-1" />
+        <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => refetch()}>
+          <HugeiconsIcon icon={RefreshIcon} className="size-4" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   const paid = invoice?.status === "PAID";
   const message = paid
