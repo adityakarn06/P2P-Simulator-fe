@@ -13,6 +13,7 @@ export { default as Add01Icon } from "@hugeicons/core-free-icons/Add01Icon";
 export { default as Alert01Icon } from "@hugeicons/core-free-icons/Alert01Icon";
 export { default as Alert02Icon } from "@hugeicons/core-free-icons/Alert02Icon";
 export { default as ArrowDown01Icon } from "@hugeicons/core-free-icons/ArrowDown01Icon";
+export { default as ArrowLeft01Icon } from "@hugeicons/core-free-icons/ArrowLeft01Icon";
 export { default as ArrowRight01Icon } from "@hugeicons/core-free-icons/ArrowRight01Icon";
 export { default as ArrowUp01Icon } from "@hugeicons/core-free-icons/ArrowUp01Icon";
 export { default as Cancel01Icon } from "@hugeicons/core-free-icons/Cancel01Icon";

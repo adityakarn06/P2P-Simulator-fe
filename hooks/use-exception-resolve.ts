@@ -22,7 +22,7 @@ export function useExceptionResolve(exception: Exception) {
   const setReasonError = useExceptionStore((s) => s.setResolveReasonError);
   const resetResolveForm = useExceptionStore((s) => s.resetResolveForm);
 
-  const { mutate, isPending, error, reset } = useResolveException();
+  const { mutate, isPending, error, reset, data } = useResolveException();
 
   const openDecision = (decision: ExceptionDecision) => setPendingDecision(exception.id, decision);
 
@@ -43,7 +43,13 @@ export function useExceptionResolve(exception: Exception) {
     }
     setReasonError(null);
     mutate(
-      { id: exception.id, decision: pendingDecision, reason: result.data },
+      {
+        id: exception.id,
+        entityType: exception.entityType,
+        entityId: exception.entityId,
+        decision: pendingDecision,
+        reason: result.data,
+      },
       {
         onSuccess: (data) => {
           if (data.releasedForPayment) {
@@ -79,5 +85,12 @@ export function useExceptionResolve(exception: Exception) {
     handleConfirm,
     isPending,
     error,
+    /**
+     * Result of the most recent resolve mutation on this exception, or
+     * `undefined` before any resolution has been attempted this session.
+     * `releasedForPayment` on it drives the payment-status banner — see
+     * components/exceptions/exception-payment-status.tsx.
+     */
+    resolveResult: data,
   };
 }

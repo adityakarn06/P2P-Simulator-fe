@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRequisition, useSendRequisitionMessage } from "@/hooks/use-requisitions";
+import { useInvoices } from "@/hooks/use-invoices";
 import { useRequisitionStore } from "@/store/requisition-store";
 import {
   deriveWorkflowStages,
@@ -9,6 +10,7 @@ import {
   isComposerEnabled,
   shouldShowSlowNotice,
 } from "@/lib/state/requisition-state";
+import { shouldShowInvoiceSection, getInvoicePollInterval } from "@/lib/state/invoice-state";
 
 /**
  * Owns everything the /requisitions/[id] screen needs: the polling detail
@@ -47,6 +49,25 @@ export function useRequisitionDetail(id: string) {
 
   const sendMessage = useSendRequisitionMessage();
 
+  const purchaseOrder = requisition?.purchaseOrder ?? null;
+  const invoiceSectionShown = purchaseOrder != null && shouldShowInvoiceSection(purchaseOrder);
+  // Same filters shape as InvoiceSection's useInvoices() call, so TanStack
+  // Query dedupes both subscriptions onto a single ["invoices","list",…] key.
+  // Polls while the latest (first, newest-first) invoice is still moving
+  // through a worker stage, so the timeline's Invoice stage doesn't go stale
+  // between whatever else happens to invalidate this list.
+  const invoices = useInvoices(
+    { purchaseOrderId: purchaseOrder?.id ?? "", limit: 50 },
+    {
+      enabled: invoiceSectionShown,
+      refetchInterval: (query) => {
+        const status = query.state.data?.items[0]?.status;
+        return status ? getInvoicePollInterval(status) : false;
+      },
+      staleTime: 0,
+    }
+  );
+
   useEffect(() => {
     if (!requisition) return;
     const statusChanged = requisition.status !== lastStatusRef.current;
@@ -81,7 +102,18 @@ export function useRequisitionDetail(id: string) {
   };
 
   const composerEnabled = requisition ? isComposerEnabled(requisition) : false;
-  const stages = requisition ? deriveWorkflowStages(requisition) : [];
+  // Invoices list newest first (backend-docs/invoices-api.md) — the first
+  // item is the latest invoice's status for the timeline's Invoice/Matching/
+  // Payment stages. `undefined` (query hasn't resolved yet) is kept distinct
+  // from `null` (resolved, confirmed empty) so the Invoice stage doesn't
+  // flash "active — upload the invoice" for a PO that already has one, in
+  // the moment before this list's first fetch completes.
+  const latestInvoiceStatus = invoiceSectionShown
+    ? invoices.data
+      ? (invoices.data.items[0]?.status ?? null)
+      : undefined
+    : null;
+  const stages = requisition ? deriveWorkflowStages(requisition, latestInvoiceStatus) : [];
   const conversationOpen = requisition ? requisition.requirement == null : false;
   const showSourcing = requisition
     ? requisition.sourcing != null ||

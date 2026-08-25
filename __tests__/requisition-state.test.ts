@@ -363,7 +363,7 @@ describe("deriveWorkflowStages", () => {
     assert.equal(poStage.note, "Budget exceeded.");
   });
 
-  test("invoice/matching/payment stay pending even once PO_CREATED", () => {
+  test("matching/payment stay pending even once PO_CREATED", () => {
     const stages = deriveWorkflowStages({
       status: "PO_CREATED",
       requirement: null,
@@ -372,9 +372,204 @@ describe("deriveWorkflowStages", () => {
       failureReason: null,
       createdAt: CREATED_AT,
     });
-    for (const id of ["invoice", "matching", "payment"] as const) {
+    for (const id of ["matching", "payment"] as const) {
       assert.equal(stages.find((s) => s.id === id)!.status, "pending", id);
     }
+  });
+
+  test("matching stage: EXTRACTED/MATCHING -> active", () => {
+    for (const status of ["EXTRACTED", "MATCHING"] as const) {
+      const stages = deriveWorkflowStages(
+        {
+          status: "PO_CREATED",
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+          failureReason: null,
+          createdAt: CREATED_AT,
+        },
+        status
+      );
+      assert.equal(stages.find((s) => s.id === "matching")!.status, "active", status);
+    }
+  });
+
+  test("matching stage: APPROVED/PAID -> completed", () => {
+    for (const status of ["APPROVED", "PAID"] as const) {
+      const stages = deriveWorkflowStages(
+        {
+          status: "PO_CREATED",
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+          failureReason: null,
+          createdAt: CREATED_AT,
+        },
+        status
+      );
+      assert.equal(stages.find((s) => s.id === "matching")!.status, "completed", status);
+    }
+  });
+
+  test("matching stage: EXCEPTION -> failed, with a mismatch note", () => {
+    const stages = deriveWorkflowStages(
+      {
+        status: "PO_CREATED",
+        requirement: null,
+        sourcing: null,
+        purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+        failureReason: null,
+        createdAt: CREATED_AT,
+      },
+      "EXCEPTION"
+    );
+    const matchingStage = stages.find((s) => s.id === "matching")!;
+    assert.equal(matchingStage.status, "failed");
+    assert.equal(matchingStage.note, "Mismatch found — review the exception.");
+  });
+
+  test("payment stage: APPROVED -> active, PAID -> completed, otherwise pending", () => {
+    const base = {
+      status: "PO_CREATED" as const,
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    };
+    assert.equal(
+      deriveWorkflowStages(base, "APPROVED").find((s) => s.id === "payment")!.status,
+      "active"
+    );
+    assert.equal(
+      deriveWorkflowStages(base, "PAID").find((s) => s.id === "payment")!.status,
+      "completed"
+    );
+    for (const status of ["EXTRACTED", "MATCHING", "EXCEPTION", "FAILED"] as const) {
+      assert.equal(
+        deriveWorkflowStages(base, status).find((s) => s.id === "payment")!.status,
+        "pending",
+        status
+      );
+    }
+  });
+
+  test("invoice stage stays pending while the PO can't be invoiced yet", () => {
+    const stages = deriveWorkflowStages({
+      status: "PO_CREATED",
+      requirement: null,
+      sourcing: null,
+      purchaseOrder: { id: "po_1", status: "PENDING_APPROVAL" } as PurchaseOrder,
+      failureReason: null,
+      createdAt: CREATED_AT,
+    });
+    assert.equal(stages.find((s) => s.id === "invoice")!.status, "pending");
+  });
+
+  test("invoice stage stays pending (not active) while the invoices query hasn't resolved yet, even if the PO can already be invoiced", () => {
+    // Regression: undefined means "don't know yet" (the invoices list query's
+    // first fetch hasn't completed) and must not be treated the same as null
+    // ("confirmed no invoice exists") — otherwise a PO that already has an
+    // invoice in flight briefly flashes "active — upload the invoice".
+    const stages = deriveWorkflowStages(
+      {
+        status: "PO_CREATED",
+        requirement: null,
+        sourcing: null,
+        purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+        failureReason: null,
+        createdAt: CREATED_AT,
+      },
+      undefined
+    );
+    assert.equal(stages.find((s) => s.id === "invoice")!.status, "pending");
+  });
+
+  test("invoice stage goes active once the PO can be invoiced and none has been uploaded", () => {
+    const stages = deriveWorkflowStages(
+      {
+        status: "PO_CREATED",
+        requirement: null,
+        sourcing: null,
+        purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+        failureReason: null,
+        createdAt: CREATED_AT,
+      },
+      null
+    );
+    assert.equal(stages.find((s) => s.id === "invoice")!.status, "active");
+  });
+
+  test("invoice stage goes active as soon as the PO is APPROVED, not only once RECEIVED/COMPLETED", () => {
+    // Regression: upload is legal from APPROVED/SHIPPED onward per
+    // canUploadInvoice, which is wider than the shipment-completed check —
+    // the invoice stage must not lag behind the section that's already
+    // showing an Upload button.
+    for (const status of ["APPROVED", "SHIPPED"] as const) {
+      const stages = deriveWorkflowStages(
+        {
+          status: "PO_CREATED",
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: { id: "po_1", status } as PurchaseOrder,
+          failureReason: null,
+          createdAt: CREATED_AT,
+        },
+        null
+      );
+      assert.equal(stages.find((s) => s.id === "invoice")!.status, "active", status);
+    }
+  });
+
+  test("invoice stage: UPLOADED/PROCESSING -> active", () => {
+    for (const status of ["UPLOADED", "PROCESSING"] as const) {
+      const stages = deriveWorkflowStages(
+        {
+          status: "PO_CREATED",
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+          failureReason: null,
+          createdAt: CREATED_AT,
+        },
+        status
+      );
+      assert.equal(stages.find((s) => s.id === "invoice")!.status, "active", status);
+    }
+  });
+
+  test("invoice stage: EXTRACTED/MATCHING/APPROVED/EXCEPTION/PAID -> completed", () => {
+    for (const status of ["EXTRACTED", "MATCHING", "APPROVED", "EXCEPTION", "PAID"] as const) {
+      const stages = deriveWorkflowStages(
+        {
+          status: "PO_CREATED",
+          requirement: null,
+          sourcing: null,
+          purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+          failureReason: null,
+          createdAt: CREATED_AT,
+        },
+        status
+      );
+      assert.equal(stages.find((s) => s.id === "invoice")!.status, "completed", status);
+    }
+  });
+
+  test("invoice stage: FAILED -> failed, with a re-upload note", () => {
+    const stages = deriveWorkflowStages(
+      {
+        status: "PO_CREATED",
+        requirement: null,
+        sourcing: null,
+        purchaseOrder: { id: "po_1", status: "COMPLETED" } as PurchaseOrder,
+        failureReason: null,
+        createdAt: CREATED_AT,
+      },
+      "FAILED"
+    );
+    const invoiceStage = stages.find((s) => s.id === "invoice")!;
+    assert.equal(invoiceStage.status, "failed");
+    assert.equal(invoiceStage.note, "Extraction failed — re-upload the document to retry.");
   });
 
   test("SUPPLIER_SELECTED, no PO yet: purchase-order stage active", () => {

@@ -1,6 +1,7 @@
 import { formatStatus } from "@/lib/formatters";
+import { canUploadInvoice } from "@/lib/state/invoice-state";
 import type { WorkflowStage } from "@/components/workflow/workflow-step";
-import type { Requisition, RequisitionStatus } from "@/types/models";
+import type { Requisition, RequisitionStatus, InvoiceStatus } from "@/types/models";
 
 /**
  * All derivation logic for the requisition intake screens lives here, kept
@@ -125,15 +126,87 @@ type StageId =
  *
  * Shipment/goods-receipt derive from `purchaseOrder.status`, which IS
  * embedded on the requisition — the requisition's own `status` never
- * advances past PO_CREATED (backend-docs/README.md). Invoice/matching/
- * payment are tracked on the invoice, which this screen does not fetch, so
- * they stay "pending" rather than faking a completed stage.
+ * advances past PO_CREATED (backend-docs/README.md). Invoice status comes
+ * from the caller (this screen fetches it separately, since Invoice has no
+ * requisitionId of its own — see hooks/use-requisition-detail.ts). Matching
+ * and payment are tracked on the invoice too, but have no dedicated UI yet,
+ * so they stay "pending".
  */
+/**
+ * Maps the latest invoice's status to the Invoice stage's WorkflowStepStatus.
+ * `null` means the invoices list has resolved and confirmed none exist yet —
+ * active once the PO can accept one, pending before that. `undefined` means
+ * the caller doesn't know yet (the invoices list query hasn't resolved for
+ * the first time) — stays pending rather than flashing "active" for a PO
+ * that may already have an invoice in flight.
+ */
+function invoiceStageStatus(
+  status: InvoiceStatus | null | undefined,
+  poCanAcceptInvoice: boolean
+): WorkflowStage["status"] {
+  if (status === undefined) return "pending";
+  if (status === null) return poCanAcceptInvoice ? "active" : "pending";
+  switch (status) {
+    case "FAILED":
+      return "failed";
+    case "UPLOADED":
+    case "PROCESSING":
+      return "active";
+    case "EXTRACTED":
+    case "MATCHING":
+    case "APPROVED":
+    case "EXCEPTION":
+    case "PAID":
+      return "completed";
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * Maps the latest invoice's status to the Matching stage's WorkflowStepStatus.
+ * Matching is queued automatically once extraction finishes (EXTRACTED) and
+ * runs deterministically (no AI) — see backend-docs/invoices-api.md. There is
+ * no dedicated matching API; Invoice.status is the only signal.
+ */
+function matchingStageStatus(status: InvoiceStatus | null | undefined): WorkflowStage["status"] {
+  switch (status) {
+    case "EXTRACTED":
+    case "MATCHING":
+      return "active";
+    case "APPROVED":
+    case "PAID":
+      return "completed";
+    case "EXCEPTION":
+      return "failed";
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * Maps the latest invoice's status to the Payment stage's WorkflowStepStatus.
+ * Payment is queued automatically once matching approves the invoice
+ * (APPROVED) and there is no Payment read endpoint — APPROVED vs PAID is the
+ * only signal (backend-docs/invoices-api.md).
+ */
+function paymentStageStatus(status: InvoiceStatus | null | undefined): WorkflowStage["status"] {
+  switch (status) {
+    case "APPROVED":
+      return "active";
+    case "PAID":
+      return "completed";
+    default:
+      return "pending";
+  }
+}
+
 export function deriveWorkflowStages(
   req: Pick<
     Requisition,
     "status" | "requirement" | "sourcing" | "purchaseOrder" | "failureReason" | "createdAt"
-  >
+  >,
+  latestInvoiceStatus?: InvoiceStatus | null
 ): WorkflowStage[] {
   const po = req.purchaseOrder;
   const poStatus = po?.status ?? null;
@@ -141,6 +214,9 @@ export function deriveWorkflowStages(
 
   const shipmentCompleted = poStatus === "RECEIVED" || poStatus === "COMPLETED";
   const shipmentActive = poStatus === "APPROVED" || poStatus === "SHIPPED";
+  // Wider than shipmentCompleted — an invoice can be uploaded from APPROVED
+  // onward (backend-docs/invoices-api.md), matching shouldShowInvoiceSection.
+  const poCanAcceptInvoice = po != null && canUploadInvoice(po);
 
   const stages: (WorkflowStage & { id: StageId })[] = [
     {
@@ -188,20 +264,30 @@ export function deriveWorkflowStages(
     {
       id: "invoice",
       label: "Invoice",
-      status: "pending",
-      note: "Tracked on the invoice, not shown here yet.",
+      status: invoiceStageStatus(latestInvoiceStatus, poCanAcceptInvoice),
+      note:
+        latestInvoiceStatus == null
+          ? poCanAcceptInvoice
+            ? "Upload the supplier invoice to continue."
+            : null
+          : latestInvoiceStatus === "FAILED"
+            ? "Extraction failed — re-upload the document to retry."
+            : null,
     },
     {
       id: "matching",
       label: "Matching",
-      status: "pending",
-      note: "Tracked on the invoice, not shown here yet.",
+      status: matchingStageStatus(latestInvoiceStatus),
+      note:
+        latestInvoiceStatus === "EXCEPTION"
+          ? "Mismatch found — review the exception."
+          : null,
     },
     {
       id: "payment",
       label: "Payment",
-      status: "pending",
-      note: "Tracked on the invoice, not shown here yet.",
+      status: paymentStageStatus(latestInvoiceStatus),
+      note: latestInvoiceStatus === "APPROVED" ? "Payment processing." : null,
     },
   ];
 

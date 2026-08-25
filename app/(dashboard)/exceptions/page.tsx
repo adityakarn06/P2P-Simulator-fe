@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useExceptionList } from "@/hooks/use-exception-list";
 import { useExceptionResolve } from "@/hooks/use-exception-resolve";
 import { PageHeader } from "@/components/common/page-header";
@@ -47,7 +48,7 @@ function ResolveActions({ exception }: { exception: Exception }) {
 
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <Button
           size="sm"
           variant="outline"
@@ -124,8 +125,8 @@ const columns: AppColumnDef<Exception>[] = [
     accessorKey: "entityType",
     header: "Entity",
     cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">
-        {row.original.entityType}
+      <span className="text-xs text-muted-foreground font-mono">
+        {row.original.entityType} {row.original.entityId.slice(0, 8)}…
       </span>
     ),
   },
@@ -141,13 +142,18 @@ const columns: AppColumnDef<Exception>[] = [
   {
     id: "actions",
     header: "Action",
-    cell: ({ row }) => <ResolveActions exception={row.original} />,
+    cell: ({ row }) => (
+      <div onClick={(e) => e.stopPropagation()}>
+        <ResolveActions exception={row.original} />
+      </div>
+    ),
   },
 ];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ExceptionsPage() {
+  const router = useRouter();
   const { activeTab, setActiveTab, data, isLoading, isError, error, refetch } =
     useExceptionList();
 
@@ -177,6 +183,7 @@ export default function ExceptionsPage() {
         data={data?.items ?? []}
         isLoading={isLoading}
         skeletonRows={6}
+        onRowClick={(row) => router.push(`/exceptions/${row.id}`)}
         emptyState={
           <EmptyState
             icon={Alert01Icon}

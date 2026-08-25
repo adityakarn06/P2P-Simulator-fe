@@ -18,6 +18,8 @@ import { SourcingSection } from "@/components/sourcing/sourcing-section";
 import { PurchaseOrderSection } from "@/components/purchase-orders/purchase-order-section";
 import { ShipmentSection } from "@/components/shipments/shipment-section";
 import { shouldShowShipmentSection } from "@/lib/state/shipment-state";
+import { InvoiceSection } from "@/components/invoices/invoice-section";
+import { shouldShowInvoiceSection } from "@/lib/state/invoice-state";
 
 interface RequisitionDetailProps {
   id: string;
@@ -145,6 +147,15 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
       {requisition.purchaseOrder && shouldShowShipmentSection(requisition.purchaseOrder) && (
         <WorkflowSection sectionId={`${requisition.id}:shipment`} title="Shipment & Goods Receipt">
           <ShipmentSection
+            requisitionId={requisition.id}
+            purchaseOrder={requisition.purchaseOrder}
+          />
+        </WorkflowSection>
+      )}
+
+      {requisition.purchaseOrder && shouldShowInvoiceSection(requisition.purchaseOrder) && (
+        <WorkflowSection sectionId={`${requisition.id}:invoice`} title="Invoice">
+          <InvoiceSection
             requisitionId={requisition.id}
             purchaseOrder={requisition.purchaseOrder}
           />

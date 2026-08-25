@@ -70,6 +70,15 @@ export function formatRelativeTime(iso: string | Date): string {
   return formatDate(date);
 }
 
+// Formats a byte count as a human-readable size, e.g. 48213 → "47.1 KB".
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
 // Status labels
 export function formatStatus(status: string): string {
   return status
