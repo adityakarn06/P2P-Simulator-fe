@@ -8,3 +8,4 @@ export * from "./shipments";
 export * from "./receipts";
 export * from "./invoices";
 export * from "./exceptions";
+export * from "./audit-logs";

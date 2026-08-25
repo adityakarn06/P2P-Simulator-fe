@@ -54,6 +54,14 @@ class ApiError extends Error {
   get isValidation(): boolean {
     return this.code === "VALIDATION_ERROR" || this.status === 400;
   }
+
+  get isConflict(): boolean {
+    return (
+      this.code === "INVALID_STATE" ||
+      this.code === "CONFLICT" ||
+      this.status === 409
+    );
+  }
 }
 
 // Mimic the envelope parsing branch from client.ts
@@ -130,6 +138,10 @@ const invoiceKeys = {
 
 const exceptionKeys = {
   list: (filters: object) => ["exceptions", "list", filters] as const,
+};
+
+const auditLogKeys = {
+  list: (filters: object) => ["audit-logs", "list", filters] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +243,26 @@ describe("ApiError flags", () => {
     const err = new ApiError("invalid", "VALIDATION_ERROR", details, 400);
     assert.deepEqual(err.details, details);
   });
+
+  test("isConflict is true for INVALID_STATE", () => {
+    const err = new ApiError("already resolved", "INVALID_STATE", undefined, 409);
+    assert.equal(err.isConflict, true);
+  });
+
+  test("isConflict is true for CONFLICT", () => {
+    const err = new ApiError("race", "CONFLICT", undefined, 409);
+    assert.equal(err.isConflict, true);
+  });
+
+  test("isConflict is true for a bare 409 status", () => {
+    const err = new ApiError("conflict", "SOME_CODE", undefined, 409);
+    assert.equal(err.isConflict, true);
+  });
+
+  test("isConflict is false for NOT_FOUND", () => {
+    const err = new ApiError("missing", "NOT_FOUND", undefined, 404);
+    assert.equal(err.isConflict, false);
+  });
 });
 
 describe("formatCurrencyFromPaise", () => {
@@ -326,6 +358,12 @@ describe("Query key factories", () => {
     assert.deepEqual(key[2], { status: "OPEN", entityId: "inv_1" });
   });
 
+  test('audit-logs list key carries filters', () => {
+    const key = auditLogKeys.list({ actorType: "USER", entityType: "Exception" });
+    assert.equal(key[0], "audit-logs");
+    assert.deepEqual(key[2], { actorType: "USER", entityType: "Exception" });
+  });
+
   test("two different filters produce different keys", () => {
     const a = requisitionKeys.list({ status: "FAILED" });
     const b = requisitionKeys.list({ status: "PO_CREATED" });
@@ -364,6 +402,38 @@ describe("Exception list envelope normalisation", () => {
   test("empty exceptions array produces empty items", () => {
     const envelope = { exceptions: [], nextCursor: null };
     const result = normaliseExceptionList(envelope);
+    assert.equal(result.items.length, 0);
+  });
+});
+
+describe("Audit log envelope normalisation", () => {
+  // Mirrors the normalisation in lib/api/audit-logs.ts listAuditLogs()
+  function normaliseAuditLogList(envelope: {
+    auditLogs: unknown[];
+    nextCursor: string | null;
+  }) {
+    return { items: envelope.auditLogs, nextCursor: envelope.nextCursor };
+  }
+
+  test("maps auditLogs array to items", () => {
+    const envelope = {
+      auditLogs: [{ id: "aud_1" }, { id: "aud_2" }],
+      nextCursor: null,
+    };
+    const result = normaliseAuditLogList(envelope);
+    assert.equal(result.items.length, 2);
+    assert.equal(result.nextCursor, null);
+  });
+
+  test("preserves nextCursor when present", () => {
+    const envelope = { auditLogs: [{ id: "aud_1" }], nextCursor: "aud_1" };
+    const result = normaliseAuditLogList(envelope);
+    assert.equal(result.nextCursor, "aud_1");
+  });
+
+  test("empty auditLogs array produces empty items", () => {
+    const envelope = { auditLogs: [], nextCursor: null };
+    const result = normaliseAuditLogList(envelope);
     assert.equal(result.items.length, 0);
   });
 });

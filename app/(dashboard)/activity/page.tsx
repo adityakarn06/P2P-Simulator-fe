@@ -1,29 +1,260 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useInfiniteAuditLogs } from "@/hooks/use-audit-logs";
 import { PageHeader } from "@/components/page-header";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { DataTable, type AppColumnDef } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { Spinner } from "@/components/loading-state";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatDateTime, formatRelativeTime, formatStatus } from "@/lib/formatters";
 import { ActivityIcon } from "@/lib/icons";
+import type { AuditAction, AuditActorType, AuditLog, EntityType } from "@/types/models";
+
+const ACTOR_TYPES: AuditActorType[] = ["SYSTEM", "AI", "USER"];
+
+const ENTITY_TYPES: EntityType[] = [
+  "Requisition",
+  "PurchaseOrder",
+  "Shipment",
+  "GoodsReceipt",
+  "Invoice",
+  "Exception",
+];
+
+const ACTIONS: AuditAction[] = [
+  "REQUISITION_CREATED",
+  "REQUISITION_CLARIFICATION_REQUESTED",
+  "REQUIREMENTS_EXTRACTED",
+  "SUPPLIERS_DISCOVERED",
+  "SUPPLIER_SELECTED",
+  "PO_CREATED",
+  "PO_APPROVED",
+  "PO_REJECTED",
+  "SHIPMENT_CREATED",
+  "GOODS_RECEIVED",
+  "INVOICE_UPLOADED",
+  "INVOICE_EXTRACTED",
+  "MATCH_STARTED",
+  "MATCH_COMPLETED",
+  "EXCEPTION_CREATED",
+  "EXCEPTION_RESOLVED",
+  "PAYMENT_APPROVED",
+  "PAYMENT_COMPLETED",
+  "WORKFLOW_FAILED",
+];
+
+/** Renders metadata.stage for WORKFLOW_FAILED rows, else a compact key/value summary. */
+function MetadataSummary({ log }: { log: AuditLog }) {
+  const entries = Object.entries(log.metadata ?? {}).filter(
+    ([, value]) => value !== undefined && value !== null
+  );
+
+  if (entries.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  if (log.action === "WORKFLOW_FAILED" && typeof log.metadata.stage === "string") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Stage: <span className="font-mono">{log.metadata.stage}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-xs text-muted-foreground truncate block max-w-[220px]" title={JSON.stringify(log.metadata)}>
+      {entries
+        .slice(0, 2)
+        .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+        .join(" · ")}
+    </span>
+  );
+}
+
+const columns: AppColumnDef<AuditLog>[] = [
+  {
+    accessorKey: "createdAt",
+    header: "Time",
+    cell: ({ row }) => (
+      <span
+        className="text-xs text-muted-foreground tabular-nums whitespace-nowrap"
+        title={formatDateTime(row.original.createdAt)}
+      >
+        {formatRelativeTime(row.original.createdAt)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "action",
+    header: "Action",
+    cell: ({ row }) => (
+      <span className="text-sm font-medium">{formatStatus(row.original.action)}</span>
+    ),
+  },
+  {
+    accessorKey: "actorType",
+    header: "Actor",
+    cell: ({ row }) => (
+      <div className="text-xs">
+        <span className="text-muted-foreground">{formatStatus(row.original.actorType)}</span>
+        {row.original.actorId && (
+          <p className="font-mono text-muted-foreground/80">{row.original.actorId}</p>
+        )}
+      </div>
+    ),
+  },
+  {
+    accessorKey: "entityType",
+    header: "Entity",
+    cell: ({ row }) => (
+      <div className="text-xs">
+        <span>{row.original.entityType}</span>
+        <p className="font-mono text-muted-foreground truncate max-w-[140px]">
+          {row.original.entityId}
+        </p>
+      </div>
+    ),
+  },
+  {
+    id: "details",
+    header: "Details",
+    cell: ({ row }) => <MetadataSummary log={row.original} />,
+  },
+];
+
+const ALL = "__all__";
 
 export default function ActivityPage() {
+  const [actorType, setActorType] = useState<AuditActorType | typeof ALL>(ALL);
+  const [entityType, setEntityType] = useState<EntityType | typeof ALL>(ALL);
+  const [action, setAction] = useState<AuditAction | typeof ALL>(ALL);
+
+  const filters = useMemo(
+    () => ({
+      limit: 50,
+      actorType: actorType === ALL ? undefined : actorType,
+      entityType: entityType === ALL ? undefined : entityType,
+      action: action === ALL ? undefined : action,
+    }),
+    [actorType, entityType, action]
+  );
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteAuditLogs(filters, {
+    // Poll only while a single page is loaded — the doc's "poll if you need
+    // a live activity feed" without re-fetching every accumulated page.
+    refetchInterval: (query) =>
+      (query.state.data?.pages.length ?? 1) <= 1 ? 10_000 : false,
+  });
+
+  const rows = data?.pages.flatMap((page) => page.items) ?? [];
+
+  if (isError) {
+    return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
       <PageHeader
         title="Activity"
-        description="A full audit log of all P2P workflow events across the system."
+        description="A full audit log of every P2P workflow event across the system."
       />
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-muted/30 py-24 text-center">
-        <div className="rounded-2xl bg-indigo-100 p-4 dark:bg-indigo-900/30">
-          <HugeiconsIcon
-            icon={ActivityIcon}
-            className="size-10 text-indigo-600 dark:text-indigo-400"
-            strokeWidth={1.5}
-          />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold">Coming Soon</h2>
-          <p className="max-w-xs text-sm text-muted-foreground">
-            Activity feed and audit log are under construction. Check back soon.
-          </p>
-        </div>
+
+      <p className="text-xs text-muted-foreground -mt-2">
+        Exception rows are filed under entity &quot;Exception&quot;, not the invoice or
+        requisition they concern — filter by Action to find them, or use the Exceptions screen.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={actorType} onValueChange={(v) => setActorType(v as AuditActorType | typeof ALL)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Actor" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All actors</SelectItem>
+            {ACTOR_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {formatStatus(t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={entityType} onValueChange={(v) => setEntityType(v as EntityType | typeof ALL)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Entity" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All entities</SelectItem>
+            {ENTITY_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={action} onValueChange={(v) => setAction(v as AuditAction | typeof ALL)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Action" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All actions</SelectItem>
+            {ACTIONS.map((a) => (
+              <SelectItem key={a} value={a}>
+                {formatStatus(a)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+
+      <DataTable
+        columns={columns}
+        data={rows}
+        isLoading={isLoading}
+        skeletonRows={8}
+        emptyState={
+          <EmptyState
+            icon={ActivityIcon}
+            title="No activity found"
+            description="No workflow events match the current filters."
+            className="py-12"
+          />
+        }
+      />
+
+      {hasNextPage && (
+        <div className="flex justify-center py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="gap-1.5"
+          >
+            {isFetchingNextPage && <Spinner size="sm" />}
+            Load more
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

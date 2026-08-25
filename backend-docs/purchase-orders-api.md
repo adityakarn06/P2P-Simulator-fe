@@ -40,7 +40,7 @@ worker has run. **No second request is needed to decide whether approval is requ
     "sourcing": { "...": "unchanged" },
     "purchaseOrder": {
       "id": "po_xyz789",
-      "poNumber": "PO-20260824-ABC123",
+      "poNumber": "PO-20260824-K3F9QZ0V8B2M",
       "status": "PENDING_APPROVAL",
       "requisitionId": "req_abc123",
       "supplierId": "sup_techsource",
@@ -55,6 +55,8 @@ worker has run. **No second request is needed to decide whether approval is requ
       "approvedBy": null,
       "rejectedAt": null,
       "rejectionReason": null,
+      "createdAt": "2026-08-24T09:58:00.000Z",
+      "updatedAt": "2026-08-24T09:58:00.000Z",
       "items": [
         {
           "id": "poi_1",
@@ -100,15 +102,24 @@ No body.
     "shipment": {
       "id": "ship_1",
       "purchaseOrderId": "po_xyz789",
-      "trackingNumber": "TRK-PO_XYZ789",
+      "trackingNumber": "TRK-9F2QK7M3XZ1RB8VD",
+      "carrier": null,
       "status": "IN_TRANSIT",
       "shippedAt": "2026-08-24T10:00:00.000Z",
-      "expectedDeliveryDate": "2026-08-29T00:00:00.000Z"
+      "deliveredAt": null,
+      "expectedDeliveryDate": "2026-08-29T00:00:00.000Z",
+      "createdAt": "2026-08-24T10:00:00.000Z"
     }
   },
   "error": null
 }
 ```
+
+`poNumber` and `trackingNumber` are both derived deterministically from an id (`PO-<YYYYMMDD>-`
++ 12 base36 chars of the requisition id's hash; `TRK-` + 16 base36 chars of the PO id's hash) rather
+than randomly generated — a retried worker job regenerates the identical value instead of racing the
+`@@unique` constraint with a fresh random suffix. `carrier` is always `null` for the simulated
+shipment; there is no real carrier integration.
 
 **Idempotent.** Calling it twice returns the same purchase order and the *same* shipment — no
 second shipment is created, and no duplicate audit rows are written. Safe to retry on a timeout.
@@ -150,6 +161,7 @@ with `failureReason: "Purchase order rejected: <reason>"`.
 | Unknown id, or another organization's PO | 404 | `NOT_FOUND` |
 | Already `REJECTED` | 200 | — (idempotent success) |
 | Already `APPROVED` | 409 | `INVALID_STATE` |
+| Still `DRAFT`, or already `SHIPPED`/`RECEIVED`/`COMPLETED` | 409 | `INVALID_STATE` |
 
 ## GET /api/v1/purchase-orders/:id
 

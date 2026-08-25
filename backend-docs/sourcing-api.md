@@ -232,8 +232,13 @@ asking the user to be more specific, in a new requisition.
 These are planned but **not implemented** — do not build against them yet:
 
 - `GET /api/v1/suppliers`, `GET /api/v1/suppliers/:id`
-- `GET /api/v1/exceptions` and the resolve endpoint (a `NO_SUPPLIER_FOUND` exception row is written
-  on failure, but is only reachable through `failureReason` today)
-- Purchase-order endpoints — jobs are queued on `SUPPLIER_SELECTED` but nothing consumes them yet,
-  so `PO_CREATED` is currently unreachable
 - Socket.IO events; polling is the only mechanism today
+
+Two things this doc previously listed here are now live and safe to build against:
+
+- **Purchase orders.** `SUPPLIER_SELECTED` queues a purchase-order job that a worker consumes —
+  `status` does progress to `PO_CREATED`. See `api-docs/purchase-orders-api.md`.
+- **Exceptions.** `GET /api/v1/exceptions` and `POST /api/v1/exceptions/:id/resolve` are
+  implemented. A `NO_SUPPLIER_FOUND` exception row is written on sourcing failure and is fetchable
+  via `GET /exceptions?entityId={requisitionId}` in addition to `failureReason` on the requisition.
+  See `api-docs/exceptions-api.md`.

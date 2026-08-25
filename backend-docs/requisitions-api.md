@@ -263,6 +263,9 @@ interface RequisitionDetail {
   // Supplier discovery (Phase 5) — see api-docs/sourcing-api.md for full types
   sourcing: Sourcing | null;                  // the committed decision; null until SUPPLIER_SELECTED
   supplierCandidates: SupplierCandidate[];    // every supplier evaluated, ranked; [] until discovery runs
+
+  // Purchase order (Phase 6) — see api-docs/purchase-orders-api.md for the full type and lifecycle
+  purchaseOrder: PurchaseOrder | null;        // null until the purchase-order worker has run
 }
 ```
 
@@ -270,6 +273,11 @@ interface RequisitionDetail {
 once requirements are complete — no client call triggers them. Poll this endpoint while `status` is
 `REQUIREMENTS_EXTRACTED`. Both fields, the ranking semantics, and the failure shapes are documented
 in [`api-docs/sourcing-api.md`](./sourcing-api.md).
+
+`purchaseOrder` is populated automatically once `sourcing` is committed — no second request is
+needed to decide whether an approval is pending. It carries `poNumber`, `status`, money fields
+(paise), `supplier`, and line `items`; see [`api-docs/purchase-orders-api.md`](./purchase-orders-api.md)
+for the full shape and the approve/reject endpoints.
 
 ### Errors
 

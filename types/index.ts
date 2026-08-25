@@ -22,6 +22,11 @@ export type {
   ExceptionType,
   ExceptionSeverity,
   ExceptionDecision,
+  // Cross-cutting
+  EntityType,
+  AuditActorType,
+  AuditAction,
+  AuditLog,
   // Requisition
   RequisitionMessage,
   DraftRequirements,

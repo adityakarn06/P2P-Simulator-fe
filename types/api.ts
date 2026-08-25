@@ -54,6 +54,19 @@ export class ApiError extends Error {
   get isValidation(): boolean {
     return this.code === "VALIDATION_ERROR" || this.status === 400;
   }
+
+  /**
+   * True when the request lost a state race — most commonly re-resolving an
+   * exception that someone else already decided. Per backend-docs, treat
+   * this as "refetch it", not an error to retry.
+   */
+  get isConflict(): boolean {
+    return (
+      this.code === "INVALID_STATE" ||
+      this.code === "CONFLICT" ||
+      this.status === 409
+    );
+  }
 }
 
 

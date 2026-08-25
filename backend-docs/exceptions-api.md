@@ -65,6 +65,10 @@ ones.
 | `limit` | `20` | Max `100` |
 | `cursor` | — | The `nextCursor` from the previous page |
 
+Pages are ordered newest-first by `createdAt`, with `id` as a tiebreaker (several exceptions from the
+same matching run share a `createdAt` down to the millisecond) — so a page boundary landing inside a
+tie can never skip or repeat a row.
+
 ```json
 {
   "success": true,
@@ -188,8 +192,15 @@ this MVP.
 
 ### Resolving an already-decided exception
 
-An exception's `status` is terminal once it leaves `OPEN`/`UNDER_REVIEW` — resolving it again is a
-`409 INVALID_STATE`. Disable the resolve UI once `status` is `RESOLVED` or `REJECTED`.
+An exception's `status` is terminal once it leaves `OPEN`/`UNDER_REVIEW` — resolving it again, with
+the same decision or a different one, is a `409 INVALID_STATE`; the endpoint does not replay the
+stored resolution as a `200`. Disable the resolve UI once `status` is `RESOLVED` or `REJECTED`, and
+treat a `409` here as "someone else already decided this, refetch it" rather than an error to retry.
+
+This is what makes resolution safe under a double-click or a retried request: the backend's guard is
+a single conditional update on `status IN (OPEN, UNDER_REVIEW)`, so a duplicate call can never open a
+second `PAYMENT_APPROVED`/`EXCEPTION_RESOLVED` audit row, re-enqueue payment, or move the invoice
+twice — it just gets the 409 instead.
 
 ## Exception types
 
@@ -208,7 +219,8 @@ earlier in the pipeline and are only reachable through this API now that it exis
 | `TOTAL_MISMATCH` | Matching — `TOTAL` or `CURRENCY` check failed | `Invoice` |
 | `PAYMENT_FAILURE` | Payment worker, after 3 failed provider attempts | `Invoice` |
 | `SYSTEM_FAILURE` | Either worker, after 3 failed *technical* (non-business) attempts, or an unmapped check | `Invoice` (or `Requisition`) |
-| `REQUIREMENT_INCOMPLETE`, `PO_APPROVAL_REQUIRED` | Reserved — not currently raised by any worker | — |
+| `PO_APPROVAL_REQUIRED` | PO worker, when a generated PO's total is at or above the auto-approve threshold | `PurchaseOrder` |
+| `REQUIREMENT_INCOMPLETE` | **Reserved — deliberately not raised.** A requisition missing required fields does not open an exception; it stays in a conversational `NEEDS_CLARIFICATION` loop instead (`clarificationMessage` + `missingFields` on the requisition, driven by `POST /api/v1/requisitions/:id/messages` — see `api-docs/requisitions-api.md`). That loop is the better UX for something an ordinary back-and-forth with the requester can resolve; an exceptions-inbox entry is for something only an approver, not the requester, can decide. | — |
 
 An invoice can accumulate several exceptions at once (one per distinct failing check group — see
 `architecture/matching-and-payment.md`), so always filter/group by `entityId` rather than assuming one
@@ -235,7 +247,10 @@ detail view that wants to show the specific numbers rather than just the prose `
   match is not exposed anywhere; only failed checks surface, via the exception's `metadata.checks`.
 - No Socket.IO events (`exception.created`, `exception.resolved`, `payment.completed`, etc.) — poll
   `GET /invoices/:id` for status and `GET /exceptions?entityId=...&status=OPEN` for what's blocking it.
-- `GET /audit-logs` does not exist — `EXCEPTION_RESOLVED`/`PAYMENT_APPROVED`/`PAYMENT_COMPLETED` audit
-  rows are written but not queryable.
 - No bulk-resolve. Each exception is resolved individually, even when several were opened by the same
   mismatch.
+
+`EXCEPTION_CREATED`/`EXCEPTION_RESOLVED`/`PAYMENT_APPROVED`/`PAYMENT_COMPLETED` audit rows *are*
+queryable — see [`audit-logs-api.md`](./audit-logs-api.md). Note that exception audits are filed under
+`entityType: "Exception"`, not the invoice/requisition they concern — see that doc's "entity-targeting
+quirks" section before filtering by `entityId`.

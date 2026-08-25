@@ -1,15 +1,18 @@
 import { LoadingState } from "@/components/loading-state";
 import { EmptyState } from "@/components/empty-state";
+import { StatusBadge } from "@/components/status-badge";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, ShoppingCart01Icon } from "@/lib/icons";
 import { SourcingSummary } from "@/features/sourcing/components/sourcing-summary";
 import { SupplierCandidatesTable } from "@/features/sourcing/components/supplier-candidates-table";
+import { useExceptions } from "@/hooks/use-exceptions";
+import { formatRelativeTime } from "@/lib/formatters";
 import type { Requisition } from "@/types/models";
 
 interface SourcingSectionProps {
   requisition: Pick<
     Requisition,
-    "status" | "sourcing" | "supplierCandidates" | "failureReason"
+    "id" | "status" | "sourcing" | "supplierCandidates" | "failureReason"
   >;
 }
 
@@ -19,7 +22,15 @@ interface SourcingSectionProps {
  * backend-docs/sourcing-api.md.
  */
 export function SourcingSection({ requisition }: SourcingSectionProps) {
-  const { status, sourcing, supplierCandidates, failureReason } = requisition;
+  const { id, status, sourcing, supplierCandidates, failureReason } = requisition;
+
+  // Sourcing failure also writes a NO_SUPPLIER_FOUND exception, fetchable
+  // "in addition to failureReason" — backend-docs/sourcing-api.md. Render it
+  // alongside the prose, not in place of it.
+  const { data: failureExceptions } = useExceptions(
+    { entityId: id, limit: 5 },
+    { enabled: status === "FAILED" }
+  );
 
   // Sourcing is running: transient, not a resting state.
   if (status === "REQUIREMENTS_EXTRACTED") {
@@ -35,6 +46,18 @@ export function SourcingSection({ requisition }: SourcingSectionProps) {
             <p>{failureReason}</p>
           </div>
         )}
+
+        {failureExceptions?.items.map((exception) => (
+          <div
+            key={exception.id}
+            className="flex items-center gap-2 rounded-md border p-3 text-xs text-muted-foreground"
+          >
+            <StatusBadge status={exception.severity} />
+            <StatusBadge status={exception.status} />
+            <span className="font-mono">{exception.type.replace(/_/g, " ")}</span>
+            <span className="ml-auto">{formatRelativeTime(exception.createdAt)}</span>
+          </div>
+        ))}
 
         {supplierCandidates.length > 0 ? (
           <SupplierCandidatesTable candidates={supplierCandidates} sourcing={null} />

@@ -13,7 +13,7 @@ import {
   type ResolveExceptionResponse,
 } from "@/lib/api/exceptions";
 import type { Exception } from "@/types/models";
-import type { CursorPaginatedData } from "@/types/api";
+import { ApiError, type CursorPaginatedData } from "@/types/api";
 
 export const exceptionKeys = {
   all: ["exceptions"] as const,
@@ -71,6 +71,11 @@ export function useException(
  * - Invalidates all exceptions lists (to refresh the inbox and per-invoice views).
  * - If `releasedForPayment` is true, the invoice has moved EXCEPTION → APPROVED;
  *   you should also invalidate the invoice query and start/keep polling for PAID.
+ *
+ * On a 409 (someone else already decided this — see backend-docs/exceptions-api.md,
+ * "treat a 409 here as 'someone else already decided this, refetch it'"),
+ * the same invalidation runs so the UI reflects the real, current state
+ * instead of showing a stale row next to an error toast.
  */
 export function useResolveException() {
   const queryClient = useQueryClient();
@@ -87,6 +92,14 @@ export function useResolveException() {
         queryKey: exceptionKeys.detail(variables.id),
       });
       queryClient.invalidateQueries({ queryKey: exceptionKeys.lists() });
+    },
+    onError: (error, variables) => {
+      if (error instanceof ApiError && error.isConflict) {
+        queryClient.invalidateQueries({
+          queryKey: exceptionKeys.detail(variables.id),
+        });
+        queryClient.invalidateQueries({ queryKey: exceptionKeys.lists() });
+      }
     },
   });
 }

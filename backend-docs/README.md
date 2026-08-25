@@ -12,6 +12,7 @@ is `/api/v1` (e.g. `POST /api/v1/requisitions`).
 | 4. Shipment & goods receipt | [`receipts-api.md`](./receipts-api.md) | `GET /shipments/:id`, `POST /receipts/simulate` |
 | 5. Invoice upload & extraction | [`invoices-api.md`](./invoices-api.md) | `POST /invoices`, `GET /invoices/:id`, `GET /invoices` |
 | 6. Matching, payment, exceptions | [`exceptions-api.md`](./exceptions-api.md) | `GET /exceptions`, `GET /exceptions/:id`, `POST /exceptions/:id/resolve` |
+| Cross-cutting: activity log | [`audit-logs-api.md`](./audit-logs-api.md) | `GET /audit-logs` |
 
 ## The whole flow, end to end
 
@@ -139,7 +140,6 @@ Do not build against these — they will 404 or don't exist:
   are exposed, via `exception.metadata.checks`; a passing match's full 12-check breakdown isn't
   fetchable anywhere
 - `GET /suppliers`, `GET /suppliers/:id`
-- `GET /audit-logs`
 - Socket.IO realtime events — polling is the only mechanism today
 
 When these land, this table and the per-stage docs will be updated — check back before building

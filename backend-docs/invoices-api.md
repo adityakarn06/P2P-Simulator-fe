@@ -20,10 +20,10 @@ GET /invoices/:id             ──▶ EXTRACTED   fields + items populated
         │
         ▼  automatic — matching worker (deterministic, no AI)
 GET /invoices/:id             ──▶ APPROVED    match passed → payment queued automatically
-                              ──▶ EXCEPTION   mismatch → see ./exceptions-api.md
+                              ──▶ EXCEPTION   mismatch → see api-docs/exceptions-api.md
         │
         ▼
-Payment / Exception resolution  (see ./exceptions-api.md)
+Payment / Exception resolution  (see api-docs/exceptions-api.md)
 ```
 
 The purchase order id comes from `GET /purchase-orders/:id` or from `requisition.purchaseOrder`.
@@ -103,7 +103,7 @@ client-side or treat it as a permanent link.
 | `FAILED` | Extraction gave up after 3 attempts | render `failureReason`; terminal, re-upload the document |
 | `MATCHING` | Three-way matching running | spinner — transient, usually resolves quickly (no AI call in this stage) |
 | `APPROVED` | Match passed, or a human overrode a mismatch | payment is queued automatically |
-| `EXCEPTION` | Match failed | fetch `GET /exceptions?entityId={invoiceId}` — see `./exceptions-api.md` |
+| `EXCEPTION` | Match failed | fetch `GET /exceptions?entityId={invoiceId}` — see `api-docs/exceptions-api.md` |
 | `PAID` | Settled | terminal, success state |
 
 `extractionAttempts` counts how many times the worker has tried, so a slow extraction can show
@@ -214,7 +214,7 @@ that assumes one invoice per purchase order.
 
 - No `ThreeWayMatch` / `MatchCheck` read endpoint — a passing match's full 12-check breakdown isn't
   fetchable anywhere; only a *failing* check surfaces, via the resulting exception's `metadata.checks`
-  (see `./exceptions-api.md`).
+  (see `api-docs/exceptions-api.md`).
 - No `GET /payments` / `GET /payments/:id` — a payment's progress is only visible indirectly through
   `Invoice.status`.
 - No delete or re-upload endpoint. A `FAILED` invoice is re-tried by uploading the document again as

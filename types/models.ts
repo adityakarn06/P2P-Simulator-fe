@@ -54,6 +54,60 @@ export type ExceptionSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 /** The human's verdict when resolving an exception. */
 export type ExceptionDecision = "APPROVE" | "REJECT";
 
+/** Entities audit logs and exceptions can be filed against. */
+export type EntityType =
+  | "Requisition"
+  | "PurchaseOrder"
+  | "Shipment"
+  | "GoodsReceipt"
+  | "Invoice"
+  | "Exception";
+
+export type AuditActorType = "SYSTEM" | "AI" | "USER";
+
+export type AuditAction =
+  | "REQUISITION_CREATED"
+  | "REQUISITION_CLARIFICATION_REQUESTED"
+  | "REQUIREMENTS_EXTRACTED"
+  | "SUPPLIERS_DISCOVERED"
+  | "SUPPLIER_SELECTED"
+  | "PO_CREATED"
+  | "PO_APPROVED"
+  | "PO_REJECTED"
+  | "SHIPMENT_CREATED"
+  | "GOODS_RECEIVED"
+  | "INVOICE_UPLOADED"
+  | "INVOICE_EXTRACTED"
+  | "MATCH_STARTED"
+  | "MATCH_COMPLETED"
+  | "EXCEPTION_CREATED"
+  | "EXCEPTION_RESOLVED"
+  | "PAYMENT_APPROVED"
+  | "PAYMENT_COMPLETED"
+  | "WORKFLOW_FAILED";
+
+/** One immutable row from GET /audit-logs. */
+export interface AuditLog {
+  id: string;
+  organizationId: string;
+  actorType: AuditActorType;
+  /** null for SYSTEM/AI-attributed rows; a user id for USER-attributed ones */
+  actorId: string | null;
+  action: AuditAction;
+  entityType: EntityType;
+  entityId: string;
+  metadata: {
+    /** Present on WORKFLOW_FAILED rows — which stage failed */
+    stage?: string;
+    /** Present on Exception-entityType rows — the invoice/requisition it actually concerns */
+    entityType?: string;
+    entityId?: string;
+    [key: string]: unknown;
+  };
+  /** ISO 8601 */
+  createdAt: string;
+}
+
 export interface RequisitionMessage {
   id: string;
   role: MessageRole;
@@ -237,6 +291,10 @@ export interface PurchaseOrder {
   /** ISO 8601 or null */
   rejectedAt: string | null;
   rejectionReason: string | null;
+  /** ISO 8601 */
+  createdAt: string;
+  /** ISO 8601 */
+  updatedAt: string;
   items: PurchaseOrderItem[];
 }
 
@@ -342,7 +400,7 @@ export interface Exception {
   type: ExceptionType;
   status: ExceptionStatus;
   severity: ExceptionSeverity;
-  entityType: string;
+  entityType: EntityType;
   entityId: string;
   title: string;
   description: string;

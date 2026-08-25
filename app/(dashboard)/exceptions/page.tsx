@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useExceptions, useResolveException } from "@/hooks/use-exceptions";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ResolveExceptionDialog } from "@/features/exceptions/components/resolve-exception-dialog";
+import { isResolvable } from "@/features/exceptions/lib/exception-state";
 import { DataTable, type AppColumnDef } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -13,7 +14,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRelativeTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Exception, ExceptionStatus } from "@/types/models";
+import { ApiError } from "@/types/api";
+import type { Exception, ExceptionDecision, ExceptionStatus } from "@/types/models";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert01Icon,
@@ -21,27 +23,27 @@ import {
   Cancel01Icon,
 } from "@/lib/icons";
 
-type TabFilter = "open" | "under_review" | "resolved" | "all";
+type TabFilter = "open" | "under_review" | "resolved" | "rejected" | "all";
 
 const TAB_STATUS_MAP: Record<TabFilter, ExceptionStatus | undefined> = {
   open: "OPEN",
   under_review: "UNDER_REVIEW",
   resolved: "RESOLVED",
+  rejected: "REJECTED",
   all: undefined,
 };
+
+// Refresh cadence for the inbox — backend-docs/exceptions-api.md calls this
+// "the primary read for 'what needs my attention'". No sockets, so poll.
+const INBOX_POLL_MS = 10_000;
 
 // ── Resolve action cell ───────────────────────────────────────────────────────
 
 function ResolveActions({ exception }: { exception: Exception }) {
-  const [approveOpen, setApproveOpen] = useState(false);
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [reason, setReason] = useState("");
-  const { mutate, isPending } = useResolveException();
+  const [pendingDecision, setPendingDecision] = useState<ExceptionDecision | null>(null);
+  const { mutate, isPending, error, reset } = useResolveException();
 
-  const isTerminal =
-    exception.status === "RESOLVED" || exception.status === "REJECTED";
-
-  if (isTerminal) {
+  if (!isResolvable(exception.status)) {
     return (
       <span className="text-xs text-muted-foreground">
         {exception.resolution ?? exception.status}
@@ -49,23 +51,25 @@ function ResolveActions({ exception }: { exception: Exception }) {
     );
   }
 
-  const handleApprove = () => {
+  const handleConfirm = (reason: string) => {
+    if (!pendingDecision) return;
     mutate(
-      { id: exception.id, decision: "APPROVE", reason: reason || "Approved by reviewer" },
+      { id: exception.id, decision: pendingDecision, reason },
       {
-        onSuccess: () => { toast.success("Exception approved"); setApproveOpen(false); setReason(""); },
-        onError: (e) => toast.error(e.message),
-      }
-    );
-  };
-
-  const handleReject = () => {
-    if (!reason.trim()) return;
-    mutate(
-      { id: exception.id, decision: "REJECT", reason },
-      {
-        onSuccess: () => { toast.success("Exception rejected"); setRejectOpen(false); setReason(""); },
-        onError: (e) => toast.error(e.message),
+        onSuccess: () => {
+          toast.success(
+            pendingDecision === "APPROVE" ? "Exception approved" : "Exception rejected"
+          );
+          setPendingDecision(null);
+        },
+        onError: (e) => {
+          if (e instanceof ApiError && e.isConflict) {
+            toast.error("This exception was already decided — refreshed.");
+            setPendingDecision(null);
+            return;
+          }
+          toast.error(e.message);
+        },
       }
     );
   };
@@ -77,7 +81,7 @@ function ResolveActions({ exception }: { exception: Exception }) {
           size="sm"
           variant="outline"
           className="h-7 gap-1 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950"
-          onClick={() => setApproveOpen(true)}
+          onClick={() => setPendingDecision("APPROVE")}
         >
           <HugeiconsIcon icon={TickDouble01Icon} className="size-3" />
           Approve
@@ -86,33 +90,29 @@ function ResolveActions({ exception }: { exception: Exception }) {
           size="sm"
           variant="outline"
           className="h-7 gap-1 text-xs text-red-700 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950"
-          onClick={() => setRejectOpen(true)}
+          onClick={() => setPendingDecision("REJECT")}
         >
           <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
           Reject
         </Button>
       </div>
 
-      <ConfirmDialog
-        open={approveOpen}
-        onOpenChange={setApproveOpen}
-        title="Approve Exception"
-        description={`Approve: "${exception.title}"`}
-        confirmLabel="Approve"
-        onConfirm={handleApprove}
-        isLoading={isPending}
-      />
-
-      <ConfirmDialog
-        open={rejectOpen}
-        onOpenChange={(open) => { setRejectOpen(open); if (!open) setReason(""); }}
-        title="Reject Exception"
-        description={`Reject: "${exception.title}" — a reason is required.`}
-        confirmLabel="Reject"
-        variant="destructive"
-        onConfirm={handleReject}
-        isLoading={isPending}
-      />
+      {pendingDecision && (
+        <ResolveExceptionDialog
+          open={pendingDecision != null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingDecision(null);
+              reset();
+            }
+          }}
+          decision={pendingDecision}
+          exceptionTitle={exception.title}
+          onConfirm={handleConfirm}
+          isPending={isPending}
+          error={error}
+        />
+      )}
     </>
   );
 }
@@ -183,7 +183,8 @@ export default function ExceptionsPage() {
   const status = TAB_STATUS_MAP[activeTab];
 
   const { data, isLoading, isError, error, refetch } = useExceptions(
-    status ? { status, limit: 50 } : { limit: 50 }
+    status ? { status, limit: 50 } : { limit: 50 },
+    { refetchInterval: INBOX_POLL_MS }
   );
 
   if (isError) {
@@ -202,6 +203,7 @@ export default function ExceptionsPage() {
           <TabsTrigger value="open" className="text-xs">Open</TabsTrigger>
           <TabsTrigger value="under_review" className="text-xs">Under Review</TabsTrigger>
           <TabsTrigger value="resolved" className="text-xs">Resolved</TabsTrigger>
+          <TabsTrigger value="rejected" className="text-xs">Rejected</TabsTrigger>
           <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
         </TabsList>
       </Tabs>
