@@ -96,7 +96,6 @@ export function InvoiceUploadDialog({
 
           {file ? (
             <div
-              aria-describedby={fileError ? "invoice-file-error" : undefined}
               className={cn(
                 "flex items-center gap-2 rounded-md border p-3",
                 fileError && "border-destructive"
@@ -112,6 +111,7 @@ export function InvoiceUploadDialog({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Remove selected file"
+                aria-describedby={fileError ? "invoice-file-error" : undefined}
                 disabled={isPending}
                 onClick={() => onFileChange(null)}
               >

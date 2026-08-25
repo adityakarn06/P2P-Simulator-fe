@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { listAuditLogs } from "@/lib/api/audit-logs";
 import { listExceptions } from "@/lib/api/exceptions";
@@ -111,16 +111,73 @@ export function useRequisitionActivity(requisition: Requisition) {
     hasOpenWork(requisition, latestInvoiceStatus)
   );
 
+  // Extra cursors requested per target (beyond each target's first, unpaged
+  // page) so "Show more" can pull additional audit-log pages once a target
+  // has more than one page's worth (limit: 50) of rows.
+  const [extraCursors, setExtraCursors] = useState<Record<string, string[]>>({});
+
+  const targetPageCursors = useMemo(
+    () =>
+      targets.map((target) => {
+        const key = `${target.entityType}:${target.entityId}`;
+        return [undefined, ...(extraCursors[key] ?? [])] as (string | undefined)[];
+      }),
+    [targets, extraCursors]
+  );
+
   const auditQueries = useQueries({
-    queries: targets.map((target) => {
-      const filters = { entityType: target.entityType, entityId: target.entityId, limit: 50 };
-      return {
-        queryKey: auditLogKeys.list(filters),
-        queryFn: () => listAuditLogs(filters),
-        refetchInterval: pollInterval,
-      };
-    }),
+    queries: targets.flatMap((target, i) =>
+      targetPageCursors[i].map((cursor) => {
+        const filters = {
+          entityType: target.entityType,
+          entityId: target.entityId,
+          limit: 50,
+          cursor,
+        };
+        return {
+          queryKey: auditLogKeys.list(filters),
+          queryFn: () => listAuditLogs(filters),
+          // Only the first (live) page of each target polls; older pages
+          // are immutable history once fetched.
+          refetchInterval: cursor === undefined ? pollInterval : false,
+        };
+      })
+    ),
   });
+
+  // Regroup the flat query-result array back per target so nextCursor / more
+  // pages can be resolved per entity.
+  const targetQueryGroups = useMemo(() => {
+    const pageCounts = targetPageCursors.map((cursors) => cursors.length);
+    const groupStarts = pageCounts.reduce<number[]>((starts, count, i) => {
+      starts.push(i === 0 ? 0 : starts[i - 1] + pageCounts[i - 1]);
+      return starts;
+    }, []);
+    return targets.map((target, i) => ({
+      target,
+      group: auditQueries.slice(groupStarts[i], groupStarts[i] + pageCounts[i]),
+    }));
+  }, [targets, targetPageCursors, auditQueries]);
+
+  const hasMoreAudit = targetQueryGroups.some(({ group }) => {
+    const last = group[group.length - 1];
+    return Boolean(last?.data?.nextCursor);
+  });
+
+  const loadMoreAudit = () => {
+    setExtraCursors((prev) => {
+      const next = { ...prev };
+      for (const { target, group } of targetQueryGroups) {
+        const last = group[group.length - 1];
+        const nextCursor = last?.data?.nextCursor;
+        if (nextCursor) {
+          const key = `${target.entityType}:${target.entityId}`;
+          next[key] = [...(prev[key] ?? []), nextCursor];
+        }
+      }
+      return next;
+    });
+  };
 
   const rows: AuditLog[] = useMemo(
     () => mergeAuditLogs(auditQueries.map((q) => q.data?.items ?? [])),
@@ -137,15 +194,28 @@ export function useRequisitionActivity(requisition: Requisition) {
 
   const isFetching = auditQueries.some((q) => q.isFetching);
 
-  // Degrade rather than blank out: only report an error when every audit
-  // query failed, since one dead sub-query shouldn't hide the rest.
+  // Target resolution (shipments/receipts/invoices/exceptions) failing means
+  // the fan-out itself is incomplete or wrong — that's worth surfacing even
+  // though targets.length is never actually 0 (it always includes the
+  // requisition), since a dead resolution query silently drops ids from the
+  // audit-log fan-out otherwise. Degrade rather than blank out for the audit
+  // queries themselves: only report an audit error when every audit query
+  // failed, since one dead sub-query shouldn't hide the rest.
+  const resolutionQueries = [shipments, receipts, invoices, ...exceptionQueries];
+  const failedResolutionQueries = resolutionQueries.filter((q) => q.isError);
   const failedAuditQueries = auditQueries.filter((q) => q.isError);
-  const isError = targets.length > 0 && failedAuditQueries.length === auditQueries.length;
-  const error = isError ? failedAuditQueries[0]?.error : null;
+  const isError =
+    failedResolutionQueries.length > 0 ||
+    (targets.length > 0 && auditQueries.length > 0 && failedAuditQueries.length === auditQueries.length);
+  const error = isError ? (failedResolutionQueries[0]?.error ?? failedAuditQueries[0]?.error) : null;
 
   const refetch = () => {
+    shipments.refetch();
+    receipts.refetch();
+    invoices.refetch();
+    exceptionQueries.forEach((q) => q.refetch());
     auditQueries.forEach((q) => q.refetch());
   };
 
-  return { rows, isLoading, isFetching, isError, error, refetch };
+  return { rows, isLoading, isFetching, isError, error, refetch, hasMoreAudit, loadMoreAudit };
 }
