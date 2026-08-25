@@ -58,15 +58,16 @@ const STAGE_TO_SECTION_CANDIDATES: Record<string, string[]> = {
   payment: ["invoice"],
 };
 
-function scrollToStageSection(requisitionId: string, stage: WorkflowStage) {
+function scrollToStageSection(requisitionId: string, stage: WorkflowStage): boolean {
   const candidates = STAGE_TO_SECTION_CANDIDATES[stage.id] ?? [];
   for (const suffix of candidates) {
     const el = document.getElementById(`${requisitionId}:${suffix}`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 export function RequisitionDetail({ id }: RequisitionDetailProps) {
@@ -96,8 +97,10 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
   useEffect(() => {
     if (!requisition || !activeStage) return;
     if (lastAutoScrolledStageIdRef.current === activeStage.id) return;
-    lastAutoScrolledStageIdRef.current = activeStage.id;
-    scrollToStageSection(requisition.id, activeStage);
+    const scrolled = scrollToStageSection(requisition.id, activeStage);
+    if (scrolled) {
+      lastAutoScrolledStageIdRef.current = activeStage.id;
+    }
   }, [requisition, activeStage]);
 
   if (isLoading) {

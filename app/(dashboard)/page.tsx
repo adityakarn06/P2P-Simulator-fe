@@ -3,9 +3,12 @@
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRequisitions } from "@/hooks/use-requisitions";
+import { useQuery } from "@tanstack/react-query";
+import { useRequisitions, requisitionKeys } from "@/hooks/use-requisitions";
 import { useExceptions } from "@/hooks/use-exceptions";
-import { usePurchaseOrders } from "@/hooks/use-purchase-orders";
+import { purchaseOrderKeys } from "@/hooks/use-purchase-orders";
+import { listRequisitions } from "@/lib/api/requisitions";
+import { listPurchaseOrders } from "@/lib/api/purchase-orders";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Money } from "@/components/common/money";
@@ -115,6 +118,36 @@ const ACTIVE_PO_STATUSES: PurchaseOrder["status"][] = [
   "RECEIVED",
 ];
 
+// ── Full tenant-wide data for aggregate stat cards ───────────────────────────
+// The list endpoints are cursor-paginated (max 100/page). Dashboard totals,
+// counts, and trends must reflect the whole tenant, not just the first page,
+// so we page through everything here rather than reusing the capped list
+// queries used for the "recent" tables below.
+
+const DASHBOARD_PAGE_SIZE = 100;
+
+async function fetchAllRequisitions(): Promise<RequisitionListItem[]> {
+  const items: RequisitionListItem[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await listRequisitions({ limit: DASHBOARD_PAGE_SIZE, cursor });
+    items.push(...page.items);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return items;
+}
+
+async function fetchAllPurchaseOrders(): Promise<PurchaseOrder[]> {
+  const items: PurchaseOrder[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await listPurchaseOrders({ limit: DASHBOARD_PAGE_SIZE, cursor });
+    items.push(...page.items);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return items;
+}
+
 // ── Recent requisitions columns ───────────────────────────────────────────────
 
 const reqColumns: AppColumnDef<RequisitionListItem>[] = [
@@ -194,29 +227,42 @@ const excColumns: AppColumnDef<Exception>[] = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { data: reqs, isLoading: loadingReqs } = useRequisitions({ limit: 100 });
+  // Small, capped fetches for the "recent" tables further down the page.
+  const { data: reqs, isLoading: loadingReqs } = useRequisitions({ limit: 5 });
   const { data: openExc, isLoading: loadingExc } = useExceptions({ status: "OPEN", limit: 5 });
-  const { data: pos, isLoading: loadingPos } = usePurchaseOrders({ limit: 100 });
+
+  // Full tenant-wide data (paged through to completion) for the aggregate
+  // stat cards below — these must reflect every record, not just one page.
+  const { data: allReqs, isLoading: loadingAllReqs } = useQuery({
+    queryKey: [...requisitionKeys.lists(), "dashboard-aggregate"],
+    queryFn: fetchAllRequisitions,
+  });
+  const { data: allPos, isLoading: loadingAllPos } = useQuery({
+    queryKey: [...purchaseOrderKeys.lists(), "dashboard-aggregate"],
+    queryFn: fetchAllPurchaseOrders,
+  });
+
+  const loadingPos = loadingAllPos;
 
   const recentReqs = useMemo(() => reqs?.items.slice(0, 5) ?? [], [reqs]);
 
   const totalExpensePaise = useMemo(
-    () => (pos?.items ?? []).reduce((sum, po) => (po.status === "REJECTED" ? sum : sum + po.totalPaise), 0),
-    [pos]
+    () => (allPos ?? []).reduce((sum, po) => (po.status === "REJECTED" ? sum : sum + po.totalPaise), 0),
+    [allPos]
   );
   const expenseTrend = useMemo(
     () =>
       computeTrend(
-        (pos?.items ?? []).filter((po) => po.status !== "REJECTED"),
+        (allPos ?? []).filter((po) => po.status !== "REJECTED"),
         (po) => po.createdAt,
         (po) => po.totalPaise
       ),
-    [pos]
+    [allPos]
   );
 
   const activeOrders = useMemo(
-    () => (pos?.items ?? []).filter((po) => ACTIVE_PO_STATUSES.includes(po.status)),
-    [pos]
+    () => (allPos ?? []).filter((po) => ACTIVE_PO_STATUSES.includes(po.status)),
+    [allPos]
   );
   const activeOrdersTrend = useMemo(
     () => computeTrend(activeOrders, (po) => po.createdAt),
@@ -224,13 +270,13 @@ export default function DashboardPage() {
   );
 
   const totalVendors = useMemo(
-    () => new Set((pos?.items ?? []).map((po) => po.supplierId)).size,
-    [pos]
+    () => new Set((allPos ?? []).map((po) => po.supplierId)).size,
+    [allPos]
   );
 
   const openForBids = useMemo(
-    () => (reqs?.items ?? []).filter((req) => req.status === "REQUIREMENTS_EXTRACTED"),
-    [reqs]
+    () => (allReqs ?? []).filter((req) => req.status === "REQUIREMENTS_EXTRACTED"),
+    [allReqs]
   );
   const openForBidsTrend = useMemo(
     () => computeTrend(openForBids, (req) => req.createdAt),
@@ -276,7 +322,7 @@ export default function DashboardPage() {
           label="Open For Bids"
           value={String(openForBids.length)}
           href="/requisitions"
-          isLoading={loadingReqs}
+          isLoading={loadingAllReqs}
           trend={openForBidsTrend}
         />
       </div>

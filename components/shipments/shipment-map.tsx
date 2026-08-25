@@ -117,6 +117,21 @@ export function ShipmentMap({ onArrive, className }: ShipmentMapProps) {
       .setLngLat(DELHI)
       .addTo(map);
 
+    function pinMarker(coord: LngLat) {
+      const pinEl = document.createElement("img");
+      pinEl.src = "/pin.png";
+      pinEl.alt = "";
+      pinEl.style.width = "28px";
+      pinEl.style.height = "28px";
+      pinEl.style.objectFit = "contain";
+      return new mapboxgl.Marker({ element: pinEl, anchor: "bottom" })
+        .setLngLat(coord)
+        .addTo(map);
+    }
+
+    const startPin = pinMarker(DELHI);
+    const destinationPin = pinMarker(KOLKATA);
+
     // truck.png faces east (0°); Mapbox marker rotation is clockwise from
     // north, so a due-east bearing (90°) needs 0° rotation — hence -90.
     function setTruck(coord: LngLat, bearing: number) {
@@ -187,6 +202,8 @@ export function ShipmentMap({ onArrive, className }: ShipmentMapProps) {
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
       marker.remove();
+      startPin.remove();
+      destinationPin.remove();
       map.remove();
     };
     // Intentionally empty: the map/animation is created once and onArrive is
