@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/sidebar";
 import { NavMain } from "@/components/layout/nav-main";
 import { NavDocuments } from "@/components/layout/nav-documents";
-import { NavSecondary } from "@/components/layout/nav-secondary";
 import { NavUser } from "@/components/layout/nav-user";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -23,8 +22,6 @@ import {
   Invoice01Icon,
   PackageIcon,
   ReceiptIcon,
-  Settings05Icon,
-  HelpCircleIcon,
   ActivityIcon,
   CommandIcon,
   Alert01Icon,
@@ -98,18 +95,6 @@ const data = {
       icon: <HugeiconsIcon icon={ActivityIcon} strokeWidth={2} />,
     },
   ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />,
-    },
-    {
-      title: "Help",
-      url: "/help",
-      icon: <HugeiconsIcon icon={HelpCircleIcon} strokeWidth={2} />,
-    },
-  ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -132,7 +117,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
 
       <SidebarFooter>

@@ -108,11 +108,25 @@ export interface AnalyticsExceptions {
   meanResolutionHours: number | null;
 }
 
+/**
+ * A row of `spend.topSuppliers`. Note the field names differ from the vendor
+ * scorecard's (`orders` / `total`, not `purchaseOrders` / `spend`) — the two
+ * endpoints are not interchangeable.
+ */
 export interface TopSupplierSpend {
   supplierId: string;
   supplierName: string;
-  spend: MoneyValue;
-  purchaseOrders: number;
+  /** Purchase orders counted toward `total`. */
+  orders: number;
+  /** Committed value for this supplier. */
+  total: MoneyValue;
+}
+
+/** Invoices settled for less than they were billed, and the gap that left. */
+export interface PartialSettlementSpend {
+  count: number;
+  paid: MoneyValue;
+  shortfall: MoneyValue;
 }
 
 export interface AnalyticsSpend {
@@ -122,6 +136,10 @@ export interface AnalyticsSpend {
   paid: MoneyValue;
   /** Payments held by an open exception. */
   blocked: MoneyValue;
+  /** Approved partial settlements, with the amount paid and the shortfall. */
+  partialSettlements: PartialSettlementSpend;
+  /** Committed value not yet settled. */
+  unsettledCommitment: MoneyValue;
   /** Top 10 by committed value. */
   topSuppliers: TopSupplierSpend[];
 }
@@ -138,13 +156,18 @@ export interface AiJobStats {
   p95LatencyMs: number | null;
 }
 
+/** The `ai` section of the summary — a single `byJobType` array. */
+export interface AnalyticsAi {
+  byJobType: AiJobStats[];
+}
+
 export interface AnalyticsSummary {
   funnel: AnalyticsFunnel;
   automation: AnalyticsAutomation;
   cycleTimes: AnalyticsCycleTimes;
   exceptions: AnalyticsExceptions;
   spend: AnalyticsSpend;
-  ai: AiJobStats[];
+  ai: AnalyticsAi;
 }
 
 /**

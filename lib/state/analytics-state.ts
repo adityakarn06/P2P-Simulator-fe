@@ -1,6 +1,6 @@
 import { formatStatus } from "@/lib/formatters";
 import type {
-  AiJobStats,
+  AnalyticsAi,
   AnalyticsAutomation,
   AnalyticsCycleTimes,
   AnalyticsExceptions,
@@ -200,9 +200,11 @@ export interface SupplierSpendRow {
 /**
  * Top suppliers by committed spend, as chart rows.
  *
- * Note `paise` comes from `spend.paise` and `display` from `spend.display` —
+ * Note `paise` comes from `total.paise` and `display` from `total.display` —
  * the formatted string is never parsed back into a number, per
- * backend-docs/analytics-api.md.
+ * backend-docs/analytics-api.md. The summary endpoint names these fields
+ * `orders` / `total`; the vendor scorecard names its own `purchaseOrders` /
+ * `spend`. Do not cross the two.
  */
 export function toTopSupplierSpendData(
   topSuppliers: TopSupplierSpend[] | undefined
@@ -210,9 +212,9 @@ export function toTopSupplierSpendData(
   return (topSuppliers ?? []).map((s) => ({
     supplierId: s.supplierId,
     label: s.supplierName,
-    paise: s.spend.paise,
-    display: s.spend.display,
-    purchaseOrders: s.purchaseOrders,
+    paise: s.total?.paise ?? 0,
+    display: s.total?.display ?? "",
+    purchaseOrders: s.orders,
   }));
 }
 
@@ -317,8 +319,8 @@ export function formatLatency(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function toAiJobRows(ai: AiJobStats[] | undefined): AiJobRow[] {
-  return (ai ?? []).map((job) => ({
+export function toAiJobRows(ai: AnalyticsAi | undefined): AiJobRow[] {
+  return (ai?.byJobType ?? []).map((job) => ({
     jobType: job.jobType,
     label: formatStatus(job.jobType),
     runs: job.runs,

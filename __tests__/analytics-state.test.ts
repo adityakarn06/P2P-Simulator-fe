@@ -231,8 +231,8 @@ describe("toTopSupplierSpendData", () => {
       {
         supplierId: "sup-1",
         supplierName: "TechSource",
-        spend: { paise: 21476000, display: "₹2,14,760.00" },
-        purchaseOrders: 4,
+        total: { paise: 21476000, display: "₹2,14,760.00" },
+        orders: 4,
       },
     ]);
     assert.equal(rows[0].paise, 21476000, "the integer comes straight from paise");
@@ -317,10 +317,12 @@ describe("anomaly severity", () => {
 
 describe("toAiJobRows", () => {
   test("formats rates and latencies, keeping nulls distinct from zeros", () => {
-    const rows = toAiJobRows([
-      { jobType: "INVOICE_EXTRACTION", runs: 4, successRate: 1, p50LatencyMs: 900, p95LatencyMs: 2400 },
-      { jobType: "REQUIREMENT_EXTRACTION", runs: 0, successRate: null, p50LatencyMs: null, p95LatencyMs: null },
-    ]);
+    const rows = toAiJobRows({
+      byJobType: [
+        { jobType: "INVOICE_EXTRACTION", runs: 4, successRate: 1, p50LatencyMs: 900, p95LatencyMs: 2400 },
+        { jobType: "REQUIREMENT_EXTRACTION", runs: 0, successRate: null, p50LatencyMs: null, p95LatencyMs: null },
+      ],
+    });
     assert.equal(rows[0].successRate, "100.0%");
     assert.equal(rows[0].p95, "2.4s");
     assert.equal(rows[1].successRate, NO_VALUE);

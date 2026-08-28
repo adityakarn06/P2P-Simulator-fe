@@ -92,6 +92,7 @@ export type {
   TopSupplierSpend,
   AnalyticsSpend,
   AiJobStats,
+  AnalyticsAi,
   AnalyticsSummary,
   // Supplier scorecard
   SupplierScorecardRow,

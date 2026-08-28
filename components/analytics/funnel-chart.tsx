@@ -16,7 +16,7 @@ import {
 import type { AnalyticsFunnel } from "@/types/analytics";
 
 const stageConfig: ChartConfig = {
-  total: { label: "Records", color: "var(--chart-1)" },
+  total: { label: "Records", color: "var(--chart-2)" },
 };
 
 const statusConfig: ChartConfig = {
