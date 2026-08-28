@@ -24,6 +24,8 @@ export { default as CommandIcon } from "@hugeicons/core-free-icons/CommandIcon";
 export { default as CpuIcon } from "@hugeicons/core-free-icons/CpuIcon";
 export { default as CreditCardIcon } from "@hugeicons/core-free-icons/CreditCardIcon";
 export { default as DashboardSquare01Icon } from "@hugeicons/core-free-icons/DashboardSquare01Icon";
+export { default as Download01Icon } from "@hugeicons/core-free-icons/Download01Icon";
+export { default as EyeIcon } from "@hugeicons/core-free-icons/EyeIcon";
 export { default as File01Icon } from "@hugeicons/core-free-icons/File01Icon";
 export { default as FileEditIcon } from "@hugeicons/core-free-icons/FileEditIcon";
 export { default as HelpCircleIcon } from "@hugeicons/core-free-icons/HelpCircleIcon";

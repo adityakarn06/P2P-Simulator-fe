@@ -16,6 +16,8 @@ import { formatDate } from "@/lib/formatters";
 import { isAwaitingApproval, isRejected, formatTaxRate, PO_APPROVAL_PROMPT } from "@/lib/state/purchase-order-state";
 import { usePurchaseOrderActions } from "@/hooks/use-purchase-order-actions";
 import { RejectPoDialog } from "@/components/purchase-orders/reject-po-dialog";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { getPurchaseOrderPdf } from "@/lib/api/documents";
 import type { PurchaseOrder } from "@/types/models";
 
 interface PurchaseOrderSectionProps {
@@ -80,8 +82,13 @@ export function PurchaseOrderSection({
           <p className="text-sm font-medium">{purchaseOrder.poNumber}</p>
           <p className="text-xs text-muted-foreground">{purchaseOrder.supplier.name}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={purchaseOrder.status} />
+          <DocumentActions
+            fetcher={() => getPurchaseOrderPdf(purchaseOrder.id)}
+            fallbackFilename={`purchase-order-${purchaseOrder.poNumber}.pdf`}
+            title={`Purchase Order ${purchaseOrder.poNumber}`}
+          />
         </div>
       </div>
 

@@ -33,6 +33,16 @@ export type InvoiceStatus =
   | "PAID"
   | "FAILED";
 
+/**
+ * UPLOADED — a real document a client posted to POST /invoices; the only
+ * kind OCR reads and three-way matching acts on.
+ * GENERATED — a PDFKit document rendered from the PO's own data by
+ * POST /purchase-orders/:id/generate-invoice; a demo convenience document,
+ * created straight at EXTRACTED, never sent to Gemini, never matched.
+ * See backend-docs/invoices-api.md.
+ */
+export type InvoiceSource = "UPLOADED" | "GENERATED";
+
 export type ExceptionStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
 
 export type ExceptionType =
@@ -389,6 +399,7 @@ export interface Invoice {
   purchaseOrderId: string;
   supplierId: string;
   status: InvoiceStatus;
+  source: InvoiceSource;
   /** Signed, expiring Cloudinary URL */
   fileUrl: string;
   fileMimeType: string;

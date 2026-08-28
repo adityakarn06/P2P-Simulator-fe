@@ -19,7 +19,11 @@ export function useInvoiceList() {
   const setActiveTab = useInvoiceStore((s) => s.setActiveTab);
   const status = TAB_STATUS_MAP[activeTab];
 
-  const query = useInvoices(status ? { status, limit: 50 } : { limit: 50 });
+  const query = useInvoices(
+    status
+      ? { status, source: "UPLOADED", limit: 50 }
+      : { source: "UPLOADED", limit: 50 }
+  );
 
   return { activeTab, setActiveTab, ...query };
 }

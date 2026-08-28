@@ -7,6 +7,8 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/common/status-badge";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { getReceiptPdf } from "@/lib/api/documents";
 import { formatDateTime } from "@/lib/formatters";
 import { deriveReceiptRows } from "@/lib/state/shipment-state";
 import type { GoodsReceipt, PurchaseOrderItem } from "@/types/models";
@@ -33,7 +35,14 @@ export function GoodsReceiptSummary({ goodsReceipt, poItems }: GoodsReceiptSumma
             {formatDateTime(goodsReceipt.receivedAt)} · {goodsReceipt.receivedBy}
           </p>
         </div>
-        <StatusBadge status={goodsReceipt.status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={goodsReceipt.status} />
+          <DocumentActions
+            fetcher={() => getReceiptPdf(goodsReceipt.id)}
+            fallbackFilename={`goods-receipt-${goodsReceipt.id}.pdf`}
+            title="Goods Receipt"
+          />
+        </div>
       </div>
 
       {goodsReceipt.notes && (

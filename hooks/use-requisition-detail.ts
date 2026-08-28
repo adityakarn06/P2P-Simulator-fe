@@ -51,18 +51,20 @@ export function useRequisitionDetail(id: string) {
 
   const purchaseOrder = requisition?.purchaseOrder ?? null;
   const invoiceSectionShown = purchaseOrder != null && shouldShowInvoiceSection(purchaseOrder);
-  // Same filters shape as InvoiceSection's useInvoices() call, so TanStack
-  // Query dedupes both subscriptions onto a single ["invoices","list",…] key.
+  // Same filters shape as InvoiceSection's real-invoice useInvoices() call —
+  // source: "UPLOADED" excludes the GENERATED demo document, which never
+  // enters matching and must not drive the timeline — so TanStack Query
+  // dedupes both subscriptions onto a single ["invoices","list",…] key.
   // Polls while the latest (first, newest-first) invoice is still moving
   // through a worker stage, so the timeline's Invoice stage doesn't go stale
   // between whatever else happens to invalidate this list.
   const invoices = useInvoices(
-    { purchaseOrderId: purchaseOrder?.id ?? "", limit: 50 },
+    { purchaseOrderId: purchaseOrder?.id ?? "", source: "UPLOADED", limit: 50 },
     {
       enabled: invoiceSectionShown,
       refetchInterval: (query) => {
-        const status = query.state.data?.items[0]?.status;
-        return status ? getInvoicePollInterval(status) : false;
+        const invoice = query.state.data?.items[0];
+        return invoice ? getInvoicePollInterval(invoice.status, invoice.source) : false;
       },
       staleTime: 0,
     }

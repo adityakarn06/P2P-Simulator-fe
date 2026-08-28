@@ -1,4 +1,5 @@
 import { ApiError, type ApiResponse } from "@/types/api";
+import { parseContentDispositionFilename } from "@/lib/documents";
 
 const BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"
@@ -99,6 +100,70 @@ async function request<T>(
   return json.data;
 }
 
+export interface BinaryResponse {
+  blob: Blob;
+  /** Parsed from Content-Disposition, or null if the header is absent/unparseable. */
+  filename: string | null;
+  /** The response's own Content-Type — a PDF endpoint can still stream PNG/JPEG bytes. */
+  mimeType: string;
+}
+
+/**
+ * GET a binary body (the three /pdf document endpoints — see
+ * backend-docs/documents-api.md). A 200 has no JSON envelope, so this bypasses
+ * `request()` entirely; a non-2xx response is still the normal
+ * `{ success: false, error }` envelope and is parsed the same way.
+ */
+async function requestBlob(path: string, options: RequestOptions = {}): Promise<BinaryResponse> {
+  const url = `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers: Record<string, string> = {
+    ...buildHeaders(options.headers),
+    Accept: "*/*",
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, method: "GET", headers });
+  } catch (err) {
+    if (options.signal?.aborted) {
+      throw err;
+    }
+    throw new ApiError(
+      "Network request failed. Check your connection.",
+      "NETWORK_ERROR",
+      err instanceof Error ? err.message : undefined
+    );
+  }
+
+  if (!res.ok) {
+    let json: ApiResponse<unknown>;
+    try {
+      json = (await res.json()) as ApiResponse<unknown>;
+    } catch {
+      throw new ApiError(
+        `Unexpected response from server (HTTP ${res.status}).`,
+        "PARSE_ERROR",
+        undefined,
+        res.status
+      );
+    }
+    const err = !json.success ? json.error : undefined;
+    throw new ApiError(
+      err?.message ?? "An unexpected error occurred.",
+      err?.code ?? "UNKNOWN_ERROR",
+      err?.details,
+      res.status
+    );
+  }
+
+  const blob = await res.blob();
+  return {
+    blob,
+    filename: parseContentDispositionFilename(res.headers.get("Content-Disposition")),
+    mimeType: res.headers.get("Content-Type") ?? blob.type ?? "application/octet-stream",
+  };
+}
+
 // Public API client
 export const apiClient = {
   /** GET /path */
@@ -129,5 +194,10 @@ export const apiClient = {
   /** DELETE /path */
   delete<T>(path: string, options?: RequestOptions): Promise<T> {
     return request<T>("DELETE", path, undefined, options);
+  },
+
+  /** GET /path expecting a binary body (PDF/PNG/JPEG), not the JSON envelope. */
+  getBlob(path: string, options?: RequestOptions): Promise<BinaryResponse> {
+    return requestBlob(path, options);
   },
 } as const;

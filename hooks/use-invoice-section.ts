@@ -6,7 +6,7 @@ import { useInvoices, useUploadInvoice } from "@/hooks/use-invoices";
 import { validateInvoiceFile } from "@/lib/state/invoice-state";
 import { getErrorMessage } from "@/lib/errors";
 import { ApiError } from "@/types/api";
-import type { PurchaseOrder } from "@/types/models";
+import type { PurchaseOrder, PurchaseOrderItem } from "@/types/models";
 
 /**
  * Shared toast copy for a failed invoice upload, mirroring
@@ -33,9 +33,24 @@ function invoiceErrorToastMessage(e: unknown): string {
  */
 export function useInvoiceSection(
   requisitionId: string,
-  purchaseOrder: Pick<PurchaseOrder, "id">
+  purchaseOrder: Pick<PurchaseOrder, "id"> & {
+    items: Pick<PurchaseOrderItem, "id" | "description" | "quantity">[];
+  }
 ) {
-  const invoices = useInvoices({ purchaseOrderId: purchaseOrder.id, limit: 50 });
+  // UPLOADED-only — the real, matched invoice(s). A GENERATED demo document
+  // (backend-docs/documents-api.md) is fetched separately below and rendered
+  // by GeneratedInvoicePanel, never in this list, since it never enters
+  // matching and must not be mistaken for a pipeline invoice.
+  const invoices = useInvoices({
+    purchaseOrderId: purchaseOrder.id,
+    source: "UPLOADED",
+    limit: 50,
+  });
+  const generatedInvoices = useInvoices({
+    purchaseOrderId: purchaseOrder.id,
+    source: "GENERATED",
+    limit: 1,
+  });
   const upload = useUploadInvoice();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -111,6 +126,8 @@ export function useInvoiceSection(
 
   return {
     invoices,
+    generatedInvoice: generatedInvoices.data?.items[0],
+    isGeneratedInvoiceLoading: generatedInvoices.isLoading,
     dialogOpen,
     openDialog,
     onDialogChange,

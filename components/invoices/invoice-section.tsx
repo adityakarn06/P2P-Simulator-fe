@@ -7,18 +7,23 @@ import { EmptyState } from "@/components/common/empty-state";
 import { useInvoiceSection } from "@/hooks/use-invoice-section";
 import { InvoiceUploadDialog } from "@/components/invoices/invoice-upload-dialog";
 import { InvoiceRow } from "@/components/invoices/invoice-row";
+import { GeneratedInvoicePanel } from "@/components/invoices/generated-invoice-panel";
 import { canUploadInvoice } from "@/lib/state/invoice-state";
 import { Invoice01Icon } from "@/lib/icons";
-import type { PurchaseOrder } from "@/types/models";
+import type { PurchaseOrder, PurchaseOrderItem } from "@/types/models";
 
 interface InvoiceSectionProps {
   requisitionId: string;
-  purchaseOrder: Pick<PurchaseOrder, "id" | "status">;
+  purchaseOrder: Pick<PurchaseOrder, "id" | "status"> & {
+    items: Pick<PurchaseOrderItem, "id" | "description" | "quantity">[];
+  };
 }
 
 export function InvoiceSection({ requisitionId, purchaseOrder }: InvoiceSectionProps) {
   const {
     invoices,
+    generatedInvoice,
+    isGeneratedInvoiceLoading,
     dialogOpen,
     openDialog,
     onDialogChange,
@@ -35,7 +40,14 @@ export function InvoiceSection({ requisitionId, purchaseOrder }: InvoiceSectionP
   return (
     <div className="space-y-4">
       {uploadEnabled && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+          <GeneratedInvoicePanel
+            requisitionId={requisitionId}
+            purchaseOrder={purchaseOrder}
+            generatedInvoice={generatedInvoice}
+            isLoading={isGeneratedInvoiceLoading}
+            disabled={actionsDisabled}
+          />
           <Button size="sm" disabled={actionsDisabled} onClick={openDialog}>
             Upload Invoice
           </Button>

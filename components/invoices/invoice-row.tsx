@@ -5,6 +5,9 @@ import { useInvoice } from "@/hooks/use-invoices";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Spinner } from "@/components/common/loading-state";
 import { Money } from "@/components/common/money";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { getInvoicePdf } from "@/lib/api/documents";
+import { fallbackDocumentFilename } from "@/lib/documents";
 import {
   getInvoicePollInterval,
   getInvoiceStatusMessage,
@@ -30,8 +33,8 @@ export function InvoiceRow({ invoice: initial }: InvoiceRowProps) {
   const { data: invoice } = useInvoice(initial.id, {
     initialData: initial,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status ? getInvoicePollInterval(status) : false;
+      const data = query.state.data;
+      return data ? getInvoicePollInterval(data.status, data.source) : false;
     },
     staleTime: 0,
   });
@@ -53,7 +56,15 @@ export function InvoiceRow({ invoice: initial }: InvoiceRowProps) {
             {formatFileSize(i.fileSizeBytes)} · Uploaded {formatDateTime(i.createdAt)}
           </p>
         </div>
-        <StatusBadge status={i.status} />
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusBadge status={i.status} />
+          <DocumentActions
+            fetcher={() => getInvoicePdf(i.id)}
+            fallbackFilename={fallbackDocumentFilename("invoice", i.invoiceNumber ?? i.id, i.fileMimeType)}
+            title={i.invoiceNumber ?? `Invoice ${i.id.slice(0, 8)}…`}
+            size="xs"
+          />
+        </div>
       </div>
 
       {extracted && i.totalPaise != null && (

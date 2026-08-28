@@ -1,4 +1,4 @@
-import type { PurchaseOrder, InvoiceStatus } from "@/types/models";
+import type { PurchaseOrder, PurchaseOrderItem, InvoiceStatus, InvoiceSource } from "@/types/models";
 
 /**
  * All derivation/validation logic for the invoice-upload UI lives here, kept
@@ -97,8 +97,20 @@ export function validateInvoiceFile(file: File | null | undefined): InvoiceFileV
  * resolves it (see api-docs/exceptions-api.md), which can take a while, so
  * it polls slower rather than at the same 1s cadence as an automatic
  * worker. PAID and FAILED are the real terminal states.
+ *
+ * A GENERATED invoice (backend-docs/documents-api.md) is created straight at
+ * EXTRACTED and never enters matching — polling it under the same rule as an
+ * UPLOADED invoice would poll forever, since it never leaves EXTRACTED. The
+ * `source` param lets callers stop it immediately; it defaults to
+ * "UPLOADED" so existing single-argument call sites keep their old
+ * behaviour.
  */
-export function getInvoicePollInterval(status: InvoiceStatus): number | false {
+export function getInvoicePollInterval(
+  status: InvoiceStatus,
+  source: InvoiceSource = "UPLOADED"
+): number | false {
+  if (source === "GENERATED") return false;
+
   switch (status) {
     case "UPLOADED":
     case "PROCESSING":
@@ -172,4 +184,58 @@ export function getInvoiceStatusMessage(
         tone: "error",
       };
   }
+}
+
+/** A generate-invoice dialog line's controlled form state, before validation. */
+export interface GenerateInvoiceRawLine {
+  purchaseOrderItemId: string;
+  /** String while being edited; blank means "keep the ordered quantity". */
+  quantity: string;
+}
+
+export interface GenerateInvoiceOverride {
+  purchaseOrderItemId: string;
+  quantity: number;
+}
+
+export type GenerateInvoiceValidationResult =
+  | { ok: true; overrides: GenerateInvoiceOverride[] }
+  | { ok: false; errors: Record<string, string> };
+
+/**
+ * Validates the quantity-override panel before POST
+ * /purchase-orders/:id/generate-invoice (backend-docs/documents-api.md):
+ * quantities must be non-negative integers. Only lines that differ from the
+ * item's ordered quantity are sent — an unchanged or blank line bills the
+ * full ordered quantity by omission, matching the documented default. This
+ * is a client-side courtesy check; the backend re-validates and 400s a
+ * negative, fractional or out-of-range quantity, or a repeated
+ * purchaseOrderItemId.
+ */
+export function validateGenerateInvoiceOverrides(
+  lines: GenerateInvoiceRawLine[],
+  poItems: Pick<PurchaseOrderItem, "id" | "quantity">[]
+): GenerateInvoiceValidationResult {
+  const errors: Record<string, string> = {};
+  const overrides: GenerateInvoiceOverride[] = [];
+
+  for (const line of lines) {
+    const poItem = poItems.find((item) => item.id === line.purchaseOrderItemId);
+    const trimmed = line.quantity.trim();
+    if (trimmed === "") continue;
+
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      errors[line.purchaseOrderItemId] = "Enter a whole number, 0 or greater.";
+      continue;
+    }
+    if (poItem && parsed === poItem.quantity) continue;
+
+    overrides.push({ purchaseOrderItemId: line.purchaseOrderItemId, quantity: parsed });
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, overrides };
 }

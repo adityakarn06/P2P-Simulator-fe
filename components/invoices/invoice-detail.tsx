@@ -17,6 +17,9 @@ import {
   isInvoiceWorking,
 } from "@/lib/state/invoice-state";
 import { InvoiceExtractedFields } from "@/components/invoices/invoice-extracted-fields";
+import { DocumentActions } from "@/components/documents/document-actions";
+import { getInvoicePdf } from "@/lib/api/documents";
+import { fallbackDocumentFilename } from "@/lib/documents";
 import { formatFileSize, formatDateTime } from "@/lib/formatters";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert01Icon, CheckmarkCircle02Icon } from "@/lib/icons";
@@ -28,8 +31,8 @@ interface InvoiceDetailProps {
 export function InvoiceDetail({ id }: InvoiceDetailProps) {
   const { data: invoice, isLoading, isError, error, refetch } = useInvoice(id, {
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status ? getInvoicePollInterval(status) : false;
+      const data = query.state.data;
+      return data ? getInvoicePollInterval(data.status, data.source) : false;
     },
     staleTime: 0,
   });
@@ -50,9 +53,19 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
     return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
   }
 
-  const extracting = isInvoiceExtracting(invoice.status);
-  const working = isInvoiceWorking(invoice.status);
-  const message = getInvoiceStatusMessage(invoice.status, invoice.failureReason);
+  const isGenerated = invoice.source === "GENERATED";
+  const extracting = !isGenerated && isInvoiceExtracting(invoice.status);
+  const working = !isGenerated && isInvoiceWorking(invoice.status);
+  // A GENERATED invoice (backend-docs/documents-api.md) is created straight
+  // at EXTRACTED and never enters matching, so the scripted EXTRACTED copy
+  // ("Checking invoice against the PO") would describe work that will never
+  // happen and never resolve, since polling is off for this source.
+  const message = isGenerated
+    ? {
+        title: "Demo document — not matched or paid. Download it, then upload as a new invoice to run three-way matching.",
+        tone: "info" as const,
+      }
+    : getInvoiceStatusMessage(invoice.status, invoice.failureReason);
   const extracted = invoice.extractedAt != null;
 
   return (
@@ -60,7 +73,20 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
       <PageHeader
         title="Invoice Detail"
         description={invoice.invoiceNumber ?? `Invoice ${invoice.id.slice(0, 8)}…`}
-        actions={<StatusBadge status={invoice.status} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StatusBadge status={invoice.status} />
+            <DocumentActions
+              fetcher={() => getInvoicePdf(invoice.id)}
+              fallbackFilename={fallbackDocumentFilename(
+                "invoice",
+                invoice.invoiceNumber ?? invoice.id,
+                invoice.fileMimeType
+              )}
+              title={invoice.invoiceNumber ?? `Invoice ${invoice.id.slice(0, 8)}…`}
+            />
+          </div>
+        }
       />
 
       <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 sm:grid-cols-3">
@@ -75,7 +101,9 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
         </div>
         <div>
           <p className="text-xs text-muted-foreground">File size</p>
-          <p className="text-sm">{formatFileSize(invoice.fileSizeBytes)}</p>
+          <p className="text-sm">
+            {invoice.fileSizeBytes != null ? formatFileSize(invoice.fileSizeBytes) : "—"}
+          </p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Uploaded</p>

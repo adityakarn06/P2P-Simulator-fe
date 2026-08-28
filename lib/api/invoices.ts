@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { Invoice, InvoiceStatus } from "@/types/models";
+import type { Invoice, InvoiceStatus, InvoiceSource } from "@/types/models";
 import type { CursorPaginatedData } from "@/types/api";
 
 /**
@@ -14,6 +14,8 @@ interface UploadInvoiceResponseEnvelope {
 export interface ListInvoicesParams {
   status?: InvoiceStatus;
   purchaseOrderId?: string;
+  /** UPLOADED (real, matched) or GENERATED (demo document) */
+  source?: InvoiceSource;
   /** 1–100, default 20 */
   limit?: number;
   cursor?: string;
@@ -60,6 +62,7 @@ export async function listInvoices(
   const search = new URLSearchParams();
   if (params.status) search.set("status", params.status);
   if (params.purchaseOrderId) search.set("purchaseOrderId", params.purchaseOrderId);
+  if (params.source) search.set("source", params.source);
   if (params.limit !== undefined) search.set("limit", String(params.limit));
   if (params.cursor) search.set("cursor", params.cursor);
 

@@ -57,8 +57,12 @@ export function useRequisitionActivity(requisition: Requisition) {
     { purchaseOrderId: purchaseOrderId ?? "", limit: 100 },
     { enabled: Boolean(purchaseOrderId) }
   );
+  // source: "UPLOADED" matches useRequisitionDetail's invoices query
+  // (same filters shape) so TanStack Query dedupes both subscriptions onto
+  // a single key, and excludes the GENERATED demo document — which never
+  // enters matching or exceptions — from the activity timeline.
   const invoices = useInvoices(
-    { purchaseOrderId: purchaseOrderId ?? "", limit: 50 },
+    { purchaseOrderId: purchaseOrderId ?? "", source: "UPLOADED", limit: 50 },
     { enabled: Boolean(purchaseOrderId) }
   );
 
