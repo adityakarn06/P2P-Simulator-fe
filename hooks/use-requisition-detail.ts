@@ -3,6 +3,9 @@
 import { useEffect, useRef } from "react";
 import { useRequisition, useSendRequisitionMessage } from "@/hooks/use-requisitions";
 import { useInvoices } from "@/hooks/use-invoices";
+import { usePurchaseOrder } from "@/hooks/use-purchase-orders";
+import { useShipment } from "@/hooks/use-shipments";
+import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { useRequisitionStore } from "@/store/requisition-store";
 import {
   deriveWorkflowStages,
@@ -51,6 +54,16 @@ export function useRequisitionDetail(id: string) {
 
   const purchaseOrder = requisition?.purchaseOrder ?? null;
   const invoiceSectionShown = purchaseOrder != null && shouldShowInvoiceSection(purchaseOrder);
+
+  // Same query key as useShipmentSection's usePurchaseOrder(purchaseOrder.id)
+  // call (hooks/use-shipment-section.ts), so this dedupes onto the ShipmentSection's
+  // subscription rather than double-fetching — used only to source the real
+  // shipment/goods-receipt timestamps the timeline shows per stage.
+  const poDetail = usePurchaseOrder(purchaseOrder?.id ?? "", {
+    enabled: purchaseOrder != null,
+  });
+  const shipmentId = poDetail.data?.shipment?.id ?? "";
+  const shipment = useShipment(shipmentId, { enabled: Boolean(shipmentId) });
   // Same filters shape as InvoiceSection's real-invoice useInvoices() call —
   // source: "UPLOADED" excludes the GENERATED demo document, which never
   // enters matching and must not drive the timeline — so TanStack Query
@@ -120,7 +133,31 @@ export function useRequisitionDetail(id: string) {
   // RequisitionExceptionAlert, the one consumer.
   const exceptionInvoiceId =
     latestInvoiceStatus === "EXCEPTION" ? (latestInvoice?.id ?? null) : null;
-  const stages = requisition ? deriveWorkflowStages(requisition, latestInvoiceStatus) : [];
+
+  // Invoice.status has no matchedAt/paidAt field, so the Matching and Payment
+  // stages' timestamps come from the one place the backend actually records
+  // when each finished: the audit trail (backend-docs/audit-logs-api.md).
+  // Scoped to this invoice + a single action so each query returns at most
+  // the one row that matters, newest first.
+  const invoiceId = latestInvoice?.id ?? "";
+  const matchCompletedLog = useAuditLogs(
+    { entityType: "Invoice", entityId: invoiceId, action: "MATCH_COMPLETED", limit: 1 },
+    { enabled: Boolean(invoiceId) }
+  );
+  const paymentCompletedLog = useAuditLogs(
+    { entityType: "Invoice", entityId: invoiceId, action: "PAYMENT_COMPLETED", limit: 1 },
+    { enabled: Boolean(invoiceId) }
+  );
+
+  const stages = requisition
+    ? deriveWorkflowStages(requisition, latestInvoiceStatus, {
+        latestInvoice,
+        shipment: poDetail.data?.shipment,
+        goodsReceipt: shipment.data?.goodsReceipt,
+        matchCompletedAt: matchCompletedLog.data?.items[0]?.createdAt ?? null,
+        paymentCompletedAt: paymentCompletedLog.data?.items[0]?.createdAt ?? null,
+      })
+    : [];
   // The page header's pill: read back off the already-derived stages (rather
   // than recomputing with getWorkerActivity/getAwaitingAction) so the header
   // and the timeline can never disagree about which stage is active or what

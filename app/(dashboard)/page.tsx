@@ -26,7 +26,6 @@ import {
   formatDuration,
   formatCount,
   summarizeAutomation,
-  toAiJobRows,
   toCycleTimeChartData,
   type FunnelStage,
 } from "@/lib/state/analytics-state";
@@ -155,7 +154,6 @@ export default function DashboardPage() {
   const recentReqs = useMemo(() => reqs?.items.slice(0, 5) ?? [], [reqs]);
 
   const automation = summary ? summarizeAutomation(summary.automation) : null;
-  const aiRows = toAiJobRows(summary?.ai);
   const cycleRows = summary ? toCycleTimeChartData(summary.cycleTimes) : [];
 
   return (
@@ -283,46 +281,6 @@ export default function DashboardPage() {
             <SupplierScorecardTable suppliers={suppliers} isLoading={isSuppliersLoading} />
           </AnalyticsCard>
 
-          {/* ── Anomaly feed ──────────────────────────────────────────── */}
-          <AnalyticsCard
-            title="Anomaly signals"
-            caption="Advisory only — a signal never blocks a payment, raises an exception, or changes a match verdict. These are deterministic statistics over this organization's own history, not a model, and each ships with the sentence that explains it."
-          >
-            <AnomalyFeed
-              signals={anomalies}
-              isLoading={isAnomaliesLoading}
-              severity={severity}
-              onSeverityChange={setSeverity}
-              signalType={signalType}
-              onSignalTypeChange={setSignalType}
-              hasMore={hasMoreAnomalies}
-              onLoadMore={() => fetchMoreAnomalies()}
-              isLoadingMore={isFetchingMoreAnomalies}
-            />
-          </AnalyticsCard>
-
-          {/* ── AI latency ────────────────────────────────────────────── */}
-          {aiRows.length > 0 && (
-            <AnalyticsCard
-              title="AI processing"
-              caption="Per job type. The latency percentiles are what tell you whether the model calls are why the workflow feels slow."
-              isLoading={isSummaryLoading}
-            >
-              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {aiRows.map((job) => (
-                  <div key={job.jobType}>
-                    <dt className="truncate text-xs text-muted-foreground">{job.label}</dt>
-                    <dd className="mt-0.5 text-sm tabular-nums">
-                      {job.p50} <span className="text-muted-foreground">p50</span>
-                    </dd>
-                    <dd className="text-xs text-muted-foreground tabular-nums">
-                      {job.p95} p95 · {job.successRate} success · {job.runs} runs
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </AnalyticsCard>
-          )}
         </>
       )}
 
@@ -374,6 +332,26 @@ export default function DashboardPage() {
             skeletonRows={3}
           />
         </section>
+      )}
+
+      {/* ── Anomaly feed ──────────────────────────────────────────── */}
+      {!summaryError && (
+        <AnalyticsCard
+          title="Anomaly signals"
+          caption="Advisory only — a signal never blocks a payment, raises an exception, or changes a match verdict. These are deterministic statistics over this organization's own history, not a model, and each ships with the sentence that explains it."
+        >
+          <AnomalyFeed
+            signals={anomalies}
+            isLoading={isAnomaliesLoading}
+            severity={severity}
+            onSeverityChange={setSeverity}
+            signalType={signalType}
+            onSignalTypeChange={setSignalType}
+            hasMore={hasMoreAnomalies}
+            onLoadMore={() => fetchMoreAnomalies()}
+            isLoadingMore={isFetchingMoreAnomalies}
+          />
+        </AnalyticsCard>
       )}
     </div>
   );

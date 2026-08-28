@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,6 +23,9 @@ import type {
   AnomalySignal,
   AnomalySignalType,
 } from "@/types/analytics";
+
+/** How many signals the feed shows before the reader asks for the rest. */
+const COLLAPSED_COUNT = 3;
 
 const SEVERITIES: AnomalySeverity[] = ["CRITICAL", "WARNING", "INFO"];
 
@@ -87,43 +92,53 @@ export function AnomalyFeed({
   onLoadMore,
   isLoadingMore,
 }: AnomalyFeedProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Collapsed, the feed reads as a summary: three signals, no filters, no
+  // paging. Filtering a list you cannot see the bottom of is misleading, so
+  // the controls only appear once the reader has opened it.
+  const visible = isExpanded ? signals : signals.slice(0, COLLAPSED_COUNT);
+  const hiddenCount = signals.length - visible.length;
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={severity}
-          onValueChange={(v) => onSeverityChange(v as Filter<AnomalySeverity>)}
-        >
-          <SelectTrigger aria-label="Severity">
-            <SelectValue placeholder="Severity" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANOMALY_FILTER_ALL}>All severities</SelectItem>
-            {SEVERITIES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {formatStatus(s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {isExpanded && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={severity}
+            onValueChange={(v) => onSeverityChange(v as Filter<AnomalySeverity>)}
+          >
+            <SelectTrigger aria-label="Severity">
+              <SelectValue placeholder="Severity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANOMALY_FILTER_ALL}>All severities</SelectItem>
+              {SEVERITIES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {formatStatus(s)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select
-          value={signalType}
-          onValueChange={(v) => onSignalTypeChange(v as Filter<AnomalySignalType>)}
-        >
-          <SelectTrigger aria-label="Signal type">
-            <SelectValue placeholder="Signal" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANOMALY_FILTER_ALL}>All signals</SelectItem>
-            {SIGNAL_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {formatStatus(t)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+          <Select
+            value={signalType}
+            onValueChange={(v) => onSignalTypeChange(v as Filter<AnomalySignalType>)}
+          >
+            <SelectTrigger aria-label="Signal type">
+              <SelectValue placeholder="Signal" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANOMALY_FILTER_ALL}>All signals</SelectItem>
+              {SIGNAL_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatStatus(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {isLoading ? (
         <SkeletonLines lines={4} />
@@ -135,7 +150,7 @@ export function AnomalyFeed({
         />
       ) : (
         <ul className="space-y-2">
-          {signals.map((signal) => {
+          {visible.map((signal) => {
             const href = signalHref(signal);
             return (
               <li
@@ -172,16 +187,37 @@ export function AnomalyFeed({
         </ul>
       )}
 
-      {hasMore && (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onLoadMore}
-            disabled={isLoadingMore}
-          >
-            {isLoadingMore ? "Loading…" : "Load more"}
-          </Button>
+      {!isLoading && signals.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {(hiddenCount > 0 || hasMore || isExpanded) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded((open) => !open)}
+              aria-expanded={isExpanded}
+            >
+              {isExpanded
+                ? "Show fewer"
+                : hiddenCount > 0
+                  ? `Show ${hiddenCount} more`
+                  : "Show more"}
+              <ChevronDown
+                className={cn("ml-1 size-4 transition-transform", isExpanded && "rotate-180")}
+                aria-hidden
+              />
+            </Button>
+          )}
+
+          {isExpanded && hasMore && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onLoadMore}
+              disabled={isLoadingMore}
+            >
+              {isLoadingMore ? "Loading…" : "Load more"}
+            </Button>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,14 @@
 import { formatStatus } from "@/lib/formatters";
 import { canUploadInvoice, getInvoicePollInterval } from "@/lib/state/invoice-state";
 import type { WorkflowStage } from "@/components/workflow/workflow-step";
-import type { Requisition, RequisitionStatus, InvoiceStatus } from "@/types/models";
+import type {
+  Requisition,
+  RequisitionStatus,
+  InvoiceStatus,
+  Invoice,
+  Shipment,
+  GoodsReceipt,
+} from "@/types/models";
 
 /**
  * All derivation logic for the requisition intake screens lives here, kept
@@ -289,6 +296,7 @@ function invoiceStageStatus(
     case "MATCHING":
     case "APPROVED":
     case "EXCEPTION":
+    case "PARTIALLY_PAID":
     case "PAID":
       return "completed";
     default:
@@ -309,6 +317,10 @@ function matchingStageStatus(status: InvoiceStatus | null | undefined): Workflow
       return "active";
     case "APPROVED":
     case "PAID":
+    // A partial payment is only reached by a human overriding a mismatch, so
+    // matching is finished either way — leaving this to the default would show
+    // the stage as untouched next to an invoice that has already been settled.
+    case "PARTIALLY_PAID":
       return "completed";
     case "EXCEPTION":
       return "failed";
@@ -328,6 +340,10 @@ function paymentStageStatus(status: InvoiceStatus | null | undefined): WorkflowS
     case "APPROVED":
       return "active";
     case "PAID":
+    // Money has moved: the settlement was smaller than billed, but the payment
+    // stage itself is done — a balance outstanding is an invoice fact, not an
+    // unfinished workflow step.
+    case "PARTIALLY_PAID":
       return "completed";
     default:
       return "pending";
@@ -339,7 +355,26 @@ export function deriveWorkflowStages(
     Requisition,
     "status" | "requirement" | "sourcing" | "purchaseOrder" | "failureReason" | "createdAt"
   >,
-  latestInvoiceStatus?: InvoiceStatus | null
+  latestInvoiceStatus?: InvoiceStatus | null,
+  /**
+   * Real per-stage timestamps sourced from data the backend actually
+   * returns — never derived or guessed. Invoice/PurchaseOrder have no
+   * matchedAt/paidAt field, so matchCompletedAt/paymentCompletedAt come
+   * from the audit trail's MATCH_COMPLETED/PAYMENT_COMPLETED rows instead
+   * (the only place those moments are recorded — backend-docs/audit-logs-api.md).
+   * The Requirements stage still has no dedicated field anywhere (not even
+   * in the audit log's REQUIREMENTS_EXTRACTED row is it threaded through
+   * here) and renders without a timestamp rather than a borrowed one.
+   */
+  extra?: {
+    latestInvoice?: Pick<Invoice, "createdAt" | "extractedAt"> | null;
+    shipment?: Pick<Shipment, "shippedAt"> | null;
+    goodsReceipt?: Pick<GoodsReceipt, "receivedAt"> | null;
+    /** ISO 8601 — the invoice's MATCH_COMPLETED audit log row, if any. */
+    matchCompletedAt?: string | null;
+    /** ISO 8601 — the invoice's PAYMENT_COMPLETED audit log row, if any. */
+    paymentCompletedAt?: string | null;
+  }
 ): WorkflowStage[] {
   const po = req.purchaseOrder;
   const poStatus = po?.status ?? null;
@@ -371,6 +406,7 @@ export function deriveWorkflowStages(
         : req.status === "REQUIREMENTS_EXTRACTED"
           ? "active"
           : "pending",
+      timestamp: req.sourcing?.decidedAt ?? null,
     },
     {
       id: "purchase-order",
@@ -383,21 +419,25 @@ export function deriveWorkflowStages(
             ? "active"
             : "pending",
       note: poRejected ? po?.rejectionReason ?? "Purchase order rejected." : null,
+      timestamp: poRejected ? po?.rejectedAt : po?.createdAt,
     },
     {
       id: "shipment",
       label: "Shipment",
       status: shipmentCompleted ? "completed" : shipmentActive ? "active" : "pending",
+      timestamp: extra?.shipment?.shippedAt ?? null,
     },
     {
       id: "goods-receipt",
       label: "Goods Receipt",
       status: shipmentCompleted ? "completed" : "pending",
+      timestamp: extra?.goodsReceipt?.receivedAt ?? null,
     },
     {
       id: "invoice",
       label: "Invoice",
       status: invoiceStageStatus(latestInvoiceStatus, poCanAcceptInvoice),
+      timestamp: extra?.latestInvoice?.extractedAt ?? extra?.latestInvoice?.createdAt ?? null,
       note:
         latestInvoiceStatus === null
           ? poCanAcceptInvoice
@@ -411,6 +451,7 @@ export function deriveWorkflowStages(
       id: "matching",
       label: "Matching",
       status: matchingStageStatus(latestInvoiceStatus),
+      timestamp: extra?.matchCompletedAt ?? null,
       note:
         latestInvoiceStatus === "EXCEPTION"
           ? "Mismatch found — review the exception."
@@ -420,6 +461,7 @@ export function deriveWorkflowStages(
       id: "payment",
       label: "Payment",
       status: paymentStageStatus(latestInvoiceStatus),
+      timestamp: extra?.paymentCompletedAt ?? null,
       note: latestInvoiceStatus === "APPROVED" ? "Payment processing." : null,
     },
   ];
