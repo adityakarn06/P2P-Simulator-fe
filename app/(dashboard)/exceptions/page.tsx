@@ -6,7 +6,7 @@ import { useExceptionResolve } from "@/hooks/use-exception-resolve";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { ResolveExceptionDialog } from "@/components/exceptions/resolve-exception-dialog";
-import { isResolvable } from "@/lib/state/exception-state";
+import { canResolveException, isResolvable, isResolvableHere } from "@/lib/state/exception-state";
 import { DataTable, type AppColumnDef } from "@/components/common/data-table";
 import { EmptyState } from "@/components/common/empty-state";
 import { ErrorState } from "@/components/common/error-state";
@@ -38,7 +38,15 @@ function ResolveActions({ exception }: { exception: Exception }) {
     error,
   } = useExceptionResolve(exception);
 
-  if (!isResolvable(exception.status)) {
+  // A PO_APPROVAL_REQUIRED row is open but not decidable here — it is settled
+  // by approving or rejecting the purchase order, which closes it itself.
+  if (isResolvable(exception.status) && !isResolvableHere(exception.type)) {
+    return (
+      <span className="text-xs text-muted-foreground">On the purchase order</span>
+    );
+  }
+
+  if (!canResolveException(exception)) {
     return (
       <span className="text-xs text-muted-foreground">
         {exception.resolution ?? exception.status}

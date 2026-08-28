@@ -7,6 +7,11 @@
  * Coverage:
  *   - resolveReasonSchema — 10–1000 chars, trimmed, per backend-docs/exceptions-api.md
  *   - isResolvable — true only for OPEN / UNDER_REVIEW
+ *   - isResolvableHere / canResolveException — PO_APPROVAL_REQUIRED is decided
+ *     on the purchase order, never through /exceptions/:id/resolve
+ *   - getExceptionPollInterval — a decided exception is still polled, because
+ *     RESOLVED can legitimately become OPEN again
+ *   - getExceptionTypeNote — DUPLICATE_INVOICE's widened meaning
  *   - getExceptionChecks — reads metadata.checks, never synthesises rows
  *   - isInvoiceException — true only for entityType "Invoice"
  *   - getExceptionEntityHref — routes to the entity's detail screen, or null
@@ -18,6 +23,11 @@ import assert from "node:assert/strict";
 import {
   resolveReasonSchema,
   isResolvable,
+  isResolvableHere,
+  canResolveException,
+  getExceptionPollInterval,
+  getExceptionTypeNote,
+  EXCEPTION_POLL_MS,
   getExceptionChecks,
   isInvoiceException,
   getExceptionEntityHref,
@@ -177,5 +187,57 @@ describe("formatCheckVariance", () => {
 
   test("localises large numbers", () => {
     assert.equal(formatCheckVariance(1000), "+1,000");
+  });
+});
+
+describe("isResolvableHere / canResolveException", () => {
+  test("PO_APPROVAL_REQUIRED is not resolvable through the exceptions endpoint", () => {
+    assert.equal(isResolvableHere("PO_APPROVAL_REQUIRED"), false);
+    assert.equal(
+      canResolveException({ status: "OPEN", type: "PO_APPROVAL_REQUIRED" }),
+      false,
+      "open is not enough — the endpoint returns 409 for this type"
+    );
+  });
+
+  test("every other type is resolvable while open", () => {
+    for (const type of ["QUANTITY_MISMATCH", "PRICE_MISMATCH", "DUPLICATE_INVOICE"] as const) {
+      assert.equal(isResolvableHere(type), true);
+      assert.equal(canResolveException({ status: "OPEN", type }), true);
+      assert.equal(canResolveException({ status: "UNDER_REVIEW", type }), true);
+    }
+  });
+
+  test("a decided exception is not resolvable regardless of type", () => {
+    assert.equal(canResolveException({ status: "RESOLVED", type: "PRICE_MISMATCH" }), false);
+    assert.equal(canResolveException({ status: "REJECTED", type: "PRICE_MISMATCH" }), false);
+  });
+});
+
+describe("getExceptionPollInterval", () => {
+  test("open exceptions poll at the standard cadence", () => {
+    assert.equal(getExceptionPollInterval("OPEN"), EXCEPTION_POLL_MS);
+    assert.equal(getExceptionPollInterval("UNDER_REVIEW"), EXCEPTION_POLL_MS);
+  });
+
+  test("decided exceptions keep polling, slower — a resolved row can reopen", () => {
+    for (const status of ["RESOLVED", "REJECTED"] as const) {
+      const interval = getExceptionPollInterval(status);
+      assert.ok(interval > EXCEPTION_POLL_MS, "slower than an open exception");
+      assert.ok(interval > 0, "never stops — RESOLVED can become OPEN again");
+    }
+  });
+});
+
+describe("getExceptionTypeNote", () => {
+  test("DUPLICATE_INVOICE explains the payment-gate case, not just the number", () => {
+    const note = getExceptionTypeNote("DUPLICATE_INVOICE");
+    assert.ok(note);
+    assert.match(note, /purchase order/);
+  });
+
+  test("no note is invented for other types", () => {
+    assert.equal(getExceptionTypeNote("PRICE_MISMATCH"), null);
+    assert.equal(getExceptionTypeNote("PO_APPROVAL_REQUIRED"), null);
   });
 });

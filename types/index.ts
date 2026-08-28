@@ -14,6 +14,7 @@ export type {
   // Status enums
   RequisitionStatus,
   MessageRole,
+  InvoiceSource,
   PurchaseOrderStatus,
   ShipmentStatus,
   GoodsReceiptStatus,
@@ -56,3 +57,25 @@ export type {
   Exception,
 } from "./models";
 
+
+export type {
+  // Money + durations
+  MoneyValue,
+  DurationStats,
+  // Summary sections
+  AnalyticsFunnel,
+  AnalyticsAutomation,
+  AnalyticsCycleTimes,
+  ExceptionTypeBreakdown,
+  AnalyticsExceptions,
+  TopSupplierSpend,
+  AnalyticsSpend,
+  AiJobStats,
+  AnalyticsSummary,
+  // Supplier scorecard
+  SupplierScorecardRow,
+  // Anomaly feed
+  AnomalySeverity,
+  AnomalySignalType,
+  AnomalySignal,
+} from "./analytics";

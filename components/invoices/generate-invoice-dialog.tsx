@@ -54,6 +54,8 @@ export function GenerateInvoiceDialog({
           <DialogDescription>
             Leave a line blank to bill its full ordered quantity. Billing more than ordered is a
             way to demo a quantity-mismatch exception once the generated invoice is re-uploaded.
+            A quantity must be 1 or more — every purchase-order line is billed, and a zero-total
+            line would pass the unit-price check on no money at all.
           </DialogDescription>
         </DialogHeader>
 
@@ -72,7 +74,7 @@ export function GenerateInvoiceDialog({
                   id={`bill-qty-${item.id}`}
                   type="number"
                   inputMode="numeric"
-                  min={0}
+                  min={1}
                   placeholder={String(item.quantity)}
                   value={line?.quantity ?? ""}
                   onChange={(e) => onLineQuantityChange(item.id, e.target.value)}

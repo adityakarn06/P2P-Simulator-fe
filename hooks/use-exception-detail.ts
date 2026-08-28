@@ -1,7 +1,11 @@
 "use client";
 
 import { useException, useExceptions } from "@/hooks/use-exceptions";
-import { isInvoiceException } from "@/lib/state/exception-state";
+import {
+  EXCEPTION_POLL_MS,
+  getExceptionPollInterval,
+  isInvoiceException,
+} from "@/lib/state/exception-state";
 
 /**
  * Composes everything the /exceptions/[id] screen needs: the exception
@@ -14,11 +18,22 @@ import { isInvoiceException } from "@/lib/state/exception-state";
  * so the page calls it directly once `exception` exists, the same way the
  * inbox's ResolveActions does per row.
  *
- * No polling here — an exception only changes when a human resolves it (or
- * another tab does), and useResolveException's invalidation covers both.
+ * Polled, including once decided. An exception can be *reopened* — per
+ * backend-docs/exceptions-api.md, RESOLVED can legitimately become OPEN again
+ * on a later poll when the same failure recurs — and a PO_APPROVAL_REQUIRED row
+ * closes itself when the order is approved or rejected elsewhere. Neither
+ * transition goes through useResolveException, so its invalidation cannot
+ * cover them.
  */
 export function useExceptionDetail(id: string) {
-  const exceptionQuery = useException(id);
+  // The cadence follows the status the last poll returned, so a decided
+  // exception drops to the slower interval without ever stopping.
+  const exceptionQuery = useException(id, {
+    refetchInterval: (query) =>
+      query.state.data
+        ? getExceptionPollInterval(query.state.data.status)
+        : EXCEPTION_POLL_MS,
+  });
   const exception = exceptionQuery.data;
 
   const relatedOpenQuery = useExceptions(

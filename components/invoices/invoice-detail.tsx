@@ -9,6 +9,9 @@ import { Callout } from "@/components/common/callout";
 import { buttonVariants } from "@/components/ui/button";
 import { useInvoice } from "@/hooks/use-invoices";
 import { useExceptions } from "@/hooks/use-exceptions";
+import { usePurchaseOrder } from "@/hooks/use-purchase-orders";
+import { useShipment } from "@/hooks/use-shipments";
+import { ThreeWayMatchPanel } from "@/components/invoices/three-way-match-panel";
 import { isResolvable } from "@/lib/state/exception-state";
 import {
   getInvoicePollInterval,
@@ -37,13 +40,28 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
     staleTime: 0,
   });
 
-  // Only needed to link "Review exception" straight to the blocking
-  // exception instead of the generic inbox.
+  // Every exception ever raised against this invoice — used both to link
+  // "Review exception" straight at the blocking one and to decide whether the
+  // match panel may claim a clean pass. Fetched for every invoice, not only
+  // one currently in EXCEPTION: a resolved exception can be reopened, so a
+  // PAID status is not on its own proof that nothing is outstanding.
   const exceptions = useExceptions(
     { entityId: id, limit: 100 },
-    { enabled: invoice?.status === "EXCEPTION" }
+    { enabled: Boolean(invoice) && invoice?.source !== "GENERATED" }
   );
   const blockingException = exceptions.data?.items.find((e) => isResolvable(e.status));
+
+  // The other two documents in the three-way comparison. The goods receipt is
+  // only reachable through the shipment — GET /shipments/:id carries it with
+  // line items, which GET /receipts does not.
+  const purchaseOrderQuery = usePurchaseOrder(invoice?.purchaseOrderId ?? "", {
+    enabled: Boolean(invoice?.purchaseOrderId),
+  });
+  const purchaseOrder = purchaseOrderQuery.data?.purchaseOrder;
+  const shipmentId = purchaseOrderQuery.data?.shipment?.id;
+  const shipmentQuery = useShipment(shipmentId ?? "", {
+    enabled: Boolean(shipmentId),
+  });
 
   if (isLoading) {
     return <LoadingState message="Loading invoice…" className="flex-1" />;
@@ -157,6 +175,21 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
       </Callout>
 
       {extracted && <InvoiceExtractedFields invoice={invoice} />}
+
+      {/* The three-way comparison. Only meaningful for a real UPLOADED invoice:
+          a GENERATED one is a convenience document rendered from the PO's own
+          numbers, so comparing it back to that PO proves nothing. */}
+      {extracted && !isGenerated && purchaseOrder && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold">Three-way match</h2>
+          <ThreeWayMatchPanel
+            purchaseOrder={purchaseOrder}
+            goodsReceipt={shipmentQuery.data?.goodsReceipt ?? null}
+            invoice={invoice}
+            exceptions={exceptions.data?.items ?? []}
+          />
+        </section>
+      )}
     </div>
   );
 }

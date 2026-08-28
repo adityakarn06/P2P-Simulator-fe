@@ -24,6 +24,7 @@ import { PurchaseOrderSection } from "@/components/purchase-orders/purchase-orde
 import { ShipmentSection } from "@/components/shipments/shipment-section";
 import { shouldShowShipmentSection } from "@/lib/state/shipment-state";
 import { InvoiceSection } from "@/components/invoices/invoice-section";
+import { MatchingSection } from "@/components/invoices/matching-section";
 import { shouldShowInvoiceSection } from "@/lib/state/invoice-state";
 import { RequisitionActivity } from "@/components/requisitions/requisition-activity";
 import { RequisitionExceptionAlert } from "@/components/exceptions/requisition-exception-alert";
@@ -41,10 +42,10 @@ function sectionActivity(stages: WorkflowStage[], stageId: string) {
 }
 
 /**
- * Timeline stage ids don't map 1:1 to WorkflowSection ids — several stages
- * (goods-receipt, matching, payment) share a section with a neighbor, and
- * some sections only render once their data exists. List candidates in
- * priority order; the first one actually present in the DOM wins.
+ * Timeline stage ids don't map 1:1 to WorkflowSection ids — some stages
+ * (goods-receipt, payment) share a section with a neighbor, and some sections
+ * only render once their data exists. List candidates in priority order; the
+ * first one actually present in the DOM wins.
  */
 const STAGE_TO_SECTION_CANDIDATES: Record<string, string[]> = {
   request: ["request"],
@@ -54,8 +55,8 @@ const STAGE_TO_SECTION_CANDIDATES: Record<string, string[]> = {
   shipment: ["shipment"],
   "goods-receipt": ["shipment"],
   invoice: ["invoice"],
-  matching: ["invoice"],
-  payment: ["invoice"],
+  matching: ["matching", "invoice"],
+  payment: ["matching", "invoice"],
 };
 
 function scrollToStageSection(requisitionId: string, stage: WorkflowStage): boolean {
@@ -255,16 +256,24 @@ export function RequisitionDetail({ id }: RequisitionDetailProps) {
             <WorkflowSection
               sectionId={`${requisition.id}:invoice`}
               title="Invoice"
-              status={
-                sectionActivity(stages, "invoice") ??
-                sectionActivity(stages, "matching") ??
-                sectionActivity(stages, "payment")
-              }
+              status={sectionActivity(stages, "invoice")}
             >
               <InvoiceSection
                 requisitionId={requisition.id}
                 purchaseOrder={requisition.purchaseOrder}
               />
+            </WorkflowSection>
+          )}
+
+          {requisition.purchaseOrder && shouldShowInvoiceSection(requisition.purchaseOrder) && (
+            <WorkflowSection
+              sectionId={`${requisition.id}:matching`}
+              title="Three-way Matching"
+              status={
+                sectionActivity(stages, "matching") ?? sectionActivity(stages, "payment")
+              }
+            >
+              <MatchingSection purchaseOrder={requisition.purchaseOrder} />
             </WorkflowSection>
           )}
 

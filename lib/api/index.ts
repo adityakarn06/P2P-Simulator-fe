@@ -10,3 +10,6 @@ export * from "./invoices";
 export * from "./exceptions";
 export * from "./audit-logs";
 export * from "./documents";
+
+// Cross-cutting reads
+export * from "./analytics";

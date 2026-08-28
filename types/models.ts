@@ -210,7 +210,14 @@ export interface RequisitionListItem {
  * Use `requirements != null` to detect completed extraction, not the status string.
  */
 export interface RequisitionChatResult {
-  status: "NEEDS_CLARIFICATION" | "PROCESSING" | "REQUIREMENTS_EXTRACTED";
+  /**
+   * The requisition's real status — authoritative, and how a 200 is told apart
+   * from a 202. "PROCESSING" appears on a 202 only (the worker had not answered
+   * within ~20s; poll GET /requisitions/:id). SUPPLIER_SELECTED / PO_CREATED /
+   * FAILED mean the requisition had already moved past the conversation when
+   * this turn was delivered — nothing was changed, treat it as read-only.
+   */
+  status: RequisitionStatus;
   requisitionId: string;
   /** Always render — the assistant's natural-language reply */
   message: string;
@@ -400,8 +407,11 @@ export interface Invoice {
   supplierId: string;
   status: InvoiceStatus;
   source: InvoiceSource;
-  /** Signed, expiring Cloudinary URL */
-  fileUrl: string;
+  /**
+   * No document URL is returned by the API. To show or download the document,
+   * call GET /invoices/:id/pdf, which streams the stored bytes through a
+   * freshly minted, short-lived link (see backend-docs/invoices-api.md).
+   */
   fileMimeType: string;
   fileSizeBytes: number;
   invoiceNumber: string | null;

@@ -6,3 +6,4 @@ export * from "@/store/workflow-store";
 export * from "@/store/shipment-store";
 export * from "@/store/receipt-store";
 export * from "@/store/purchase-order-store";
+export * from "@/store/dashboard-store";

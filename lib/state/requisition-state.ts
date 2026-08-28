@@ -9,10 +9,14 @@ import type { Requisition, RequisitionStatus, InvoiceStatus } from "@/types/mode
  * __tests__/requisition-state.test.ts).
  *
  * The single source of truth is GET /requisitions/:id (a `Requisition`).
- * Never branch on the POST response's `status` field — per
- * backend-docs/requisitions-api.md, the completion turn returns
- * `status: "PROCESSING"` (not `"REQUIREMENTS_EXTRACTED"`). Completion is
- * signalled by `requirements != null`.
+ *
+ * The POST response's `status` is now authoritative (backend-docs/requisitions-api.md):
+ * the completion turn returns `"REQUIREMENTS_EXTRACTED"`, and `"PROCESSING"`
+ * appears on a 202 only — the worker had not answered in time, so poll
+ * GET /requisitions/:id. A turn may also come back `SUPPLIER_SELECTED`,
+ * `PO_CREATED` or `FAILED`, meaning the requisition had already moved past the
+ * conversation and nothing was changed. We still detect completion with
+ * `requirements != null`, which holds under both the old and new contract.
  */
 
 /** True once requirement extraction has produced a final `Requirement`. */

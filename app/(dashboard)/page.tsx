@@ -1,154 +1,51 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { useRequisitions, requisitionKeys } from "@/hooks/use-requisitions";
+import { useRequisitions } from "@/hooks/use-requisitions";
 import { useExceptions } from "@/hooks/use-exceptions";
-import { purchaseOrderKeys } from "@/hooks/use-purchase-orders";
-import { listRequisitions } from "@/lib/api/requisitions";
-import { listPurchaseOrders } from "@/lib/api/purchase-orders";
+import { useDashboard } from "@/hooks/use-dashboard";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Money } from "@/components/common/money";
 import { DataTable, type AppColumnDef } from "@/components/common/data-table";
 import { EmptyState } from "@/components/common/empty-state";
+import { ErrorState } from "@/components/common/error-state";
 import { buttonVariants } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
-import { cn } from "@/lib/utils";
-import type { RequisitionListItem, Exception, PurchaseOrder } from "@/types/models";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { KpiTile } from "@/components/analytics/kpi-tile";
+import { AnalyticsCard } from "@/components/analytics/analytics-card";
+import { DateRangeSelect } from "@/components/analytics/date-range-select";
+import { FunnelChart } from "@/components/analytics/funnel-chart";
+import { CycleTimeChart } from "@/components/analytics/cycle-time-chart";
+import { ExceptionBreakdownChart } from "@/components/analytics/exception-breakdown-chart";
+import { SupplierSpendChart } from "@/components/analytics/supplier-spend-chart";
+import { SupplierScorecardTable } from "@/components/analytics/supplier-scorecard-table";
+import { AnomalyFeed } from "@/components/analytics/anomaly-feed";
 import {
-  ArrowRight01Icon,
-  ArrowUp01Icon,
-  ArrowDown01Icon,
-  ArrowUpRight01Icon,
-  FileEditIcon as ReqIcon,
-} from "@/lib/icons";
+  formatDuration,
+  formatCount,
+  summarizeAutomation,
+  toAiJobRows,
+  toCycleTimeChartData,
+  type FunnelStage,
+} from "@/lib/state/analytics-state";
+import { formatRelativeTime } from "@/lib/formatters";
+import type { RequisitionListItem, Exception } from "@/types/models";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowRight01Icon, FileEditIcon as ReqIcon } from "@/lib/icons";
 
-// ── Trend helper ─────────────────────────────────────────────────────────────
-// There's no historical/analytics endpoint, so trends are derived client-side
-// by comparing the last 7 days against the 7 days before that, within the
-// current page of results. This is a best-effort signal, not an exact stat.
+/**
+ * The P2P analytics dashboard.
+ *
+ * Every figure here comes from GET /analytics/summary, /suppliers and
+ * /anomalies. Nothing is derived from paging through list endpoints, and
+ * nothing is estimated client-side — an earlier version of this screen
+ * fabricated week-over-week trends from whatever page of records it happened
+ * to have, which is exactly the kind of number a dashboard must not invent.
+ */
 
-type Trend = { pct: number; direction: "up" | "down" | "flat" } | null;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function computeTrend<T>(items: T[], getCreatedAt: (item: T) => string, getValue: (item: T) => number = () => 1): Trend {
-  if (items.length === 0) return null;
-  const now = Date.now();
-  let recent = 0;
-  let previous = 0;
-  for (const item of items) {
-    const age = now - new Date(getCreatedAt(item)).getTime();
-    if (age <= 7 * DAY_MS) recent += getValue(item);
-    else if (age <= 14 * DAY_MS) previous += getValue(item);
-  }
-  if (previous === 0) {
-    if (recent === 0) return null;
-    return { pct: 100, direction: "up" };
-  }
-  const pct = ((recent - previous) / previous) * 100;
-  if (Math.round(pct) === 0) return { pct: 0, direction: "flat" };
-  return { pct: Math.abs(pct), direction: pct > 0 ? "up" : "down" };
-}
-
-// ── Stat card ────────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-  label: string;
-  value: ReactNode;
-  href: string;
-  isLoading: boolean;
-  trend: Trend;
-  trendLabel?: string;
-}
-
-function StatCard({ label, value, href, isLoading, trend, trendLabel = "vs last week" }: StatCardProps) {
-  return (
-    <div className="rounded-2xl border bg-card p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-muted-foreground">{label}</span>
-        <Link
-          href={href}
-          className="flex size-8 shrink-0 items-center justify-center rounded-full border border-violet-300 text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-800 dark:text-violet-400 dark:hover:bg-violet-950/40"
-          aria-label={`View ${label}`}
-        >
-          <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-4" />
-        </Link>
-      </div>
-
-      {isLoading ? (
-        <Skeleton className="mt-3 h-9 w-24" />
-      ) : (
-        <div className="mt-2 text-3xl font-bold tabular-nums">{value}</div>
-      )}
-
-      <div className="mt-2 flex items-center gap-1 text-xs">
-        {isLoading ? (
-          <Skeleton className="h-4 w-24" />
-        ) : trend === null || trend.direction === "flat" ? (
-          <span className="text-muted-foreground">No Change</span>
-        ) : (
-          <>
-            <HugeiconsIcon
-              icon={trend.direction === "up" ? ArrowUp01Icon : ArrowDown01Icon}
-              className={cn("size-3.5", trend.direction === "up" ? "text-green-600" : "text-red-500")}
-            />
-            <span className={cn("font-medium", trend.direction === "up" ? "text-green-600" : "text-red-500")}>
-              {trend.pct.toFixed(1)}%
-            </span>
-            <span className="text-muted-foreground">{trendLabel}</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Purchase order derived stats ─────────────────────────────────────────────
-
-const ACTIVE_PO_STATUSES: PurchaseOrder["status"][] = [
-  "PENDING_APPROVAL",
-  "APPROVED",
-  "SHIPPED",
-  "RECEIVED",
-];
-
-// ── Full tenant-wide data for aggregate stat cards ───────────────────────────
-// The list endpoints are cursor-paginated (max 100/page). Dashboard totals,
-// counts, and trends must reflect the whole tenant, not just the first page,
-// so we page through everything here rather than reusing the capped list
-// queries used for the "recent" tables below.
-
-const DASHBOARD_PAGE_SIZE = 100;
-
-async function fetchAllRequisitions(): Promise<RequisitionListItem[]> {
-  const items: RequisitionListItem[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await listRequisitions({ limit: DASHBOARD_PAGE_SIZE, cursor });
-    items.push(...page.items);
-    cursor = page.nextCursor ?? undefined;
-  } while (cursor);
-  return items;
-}
-
-async function fetchAllPurchaseOrders(): Promise<PurchaseOrder[]> {
-  const items: PurchaseOrder[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await listPurchaseOrders({ limit: DASHBOARD_PAGE_SIZE, cursor });
-    items.push(...page.items);
-    cursor = page.nextCursor ?? undefined;
-  } while (cursor);
-  return items;
-}
-
-// ── Recent requisitions columns ───────────────────────────────────────────────
+// ── Recent requisitions columns ──────────────────────────────────────────────
 
 const reqColumns: AppColumnDef<RequisitionListItem>[] = [
   {
@@ -191,7 +88,7 @@ const reqColumns: AppColumnDef<RequisitionListItem>[] = [
   },
 ];
 
-// ── Open exceptions columns ───────────────────────────────────────────────────
+// ── Open exceptions columns ──────────────────────────────────────────────────
 
 const excColumns: AppColumnDef<Exception>[] = [
   {
@@ -199,7 +96,7 @@ const excColumns: AppColumnDef<Exception>[] = [
     header: "Exception",
     cell: ({ row }) => (
       <Link
-        href={`/exceptions`}
+        href={`/exceptions/${row.original.id}`}
         className="block max-w-xs truncate text-sm font-medium hover:underline"
         title={row.original.title}
       >
@@ -227,107 +124,209 @@ const excColumns: AppColumnDef<Exception>[] = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  // Small, capped fetches for the "recent" tables further down the page.
+  const [funnelStage, setFunnelStage] = useState<FunnelStage>("requisitions");
+
+  const {
+    range,
+    setRange,
+    severity,
+    setSeverity,
+    signalType,
+    setSignalType,
+    summary,
+    isSummaryLoading,
+    summaryError,
+    refetchSummary,
+    suppliers,
+    isSuppliersLoading,
+    anomalies,
+    isAnomaliesLoading,
+    hasMoreAnomalies,
+    fetchMoreAnomalies,
+    isFetchingMoreAnomalies,
+  } = useDashboard();
+
+  // Small, capped fetches for the "recent" tables at the bottom.
   const { data: reqs, isLoading: loadingReqs } = useRequisitions({ limit: 5 });
-  const { data: openExc, isLoading: loadingExc } = useExceptions({ status: "OPEN", limit: 5 });
-
-  // Full tenant-wide data (paged through to completion) for the aggregate
-  // stat cards below — these must reflect every record, not just one page.
-  const { data: allReqs, isLoading: loadingAllReqs } = useQuery({
-    queryKey: [...requisitionKeys.lists(), "dashboard-aggregate"],
-    queryFn: fetchAllRequisitions,
+  const { data: openExc, isLoading: loadingExc } = useExceptions({
+    status: "OPEN",
+    limit: 5,
   });
-  const { data: allPos, isLoading: loadingAllPos } = useQuery({
-    queryKey: [...purchaseOrderKeys.lists(), "dashboard-aggregate"],
-    queryFn: fetchAllPurchaseOrders,
-  });
-
-  const loadingPos = loadingAllPos;
-
   const recentReqs = useMemo(() => reqs?.items.slice(0, 5) ?? [], [reqs]);
 
-  const totalExpensePaise = useMemo(
-    () => (allPos ?? []).reduce((sum, po) => (po.status === "REJECTED" ? sum : sum + po.totalPaise), 0),
-    [allPos]
-  );
-  const expenseTrend = useMemo(
-    () =>
-      computeTrend(
-        (allPos ?? []).filter((po) => po.status !== "REJECTED"),
-        (po) => po.createdAt,
-        (po) => po.totalPaise
-      ),
-    [allPos]
-  );
-
-  const activeOrders = useMemo(
-    () => (allPos ?? []).filter((po) => ACTIVE_PO_STATUSES.includes(po.status)),
-    [allPos]
-  );
-  const activeOrdersTrend = useMemo(
-    () => computeTrend(activeOrders, (po) => po.createdAt),
-    [activeOrders]
-  );
-
-  const totalVendors = useMemo(
-    () => new Set((allPos ?? []).map((po) => po.supplierId)).size,
-    [allPos]
-  );
-
-  const openForBids = useMemo(
-    () => (allReqs ?? []).filter((req) => req.status === "REQUIREMENTS_EXTRACTED"),
-    [allReqs]
-  );
-  const openForBidsTrend = useMemo(
-    () => computeTrend(openForBids, (req) => req.createdAt),
-    [openForBids]
-  );
+  const automation = summary ? summarizeAutomation(summary.automation) : null;
+  const aiRows = toAiJobRows(summary?.ai);
+  const cycleRows = summary ? toCycleTimeChartData(summary.cycleTimes) : [];
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 md:p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6">
       <PageHeader
         title="Dashboard"
-        description="Procure-to-Pay lifecycle overview."
+        description="Procure-to-Pay analytics across the whole pipeline."
         actions={
-          <Link href="/requisitions/new" className={buttonVariants({ size: "sm" })}>
-            New Requisition
-          </Link>
+          <div className="flex items-center gap-2">
+            <DateRangeSelect value={range} onChange={setRange} />
+            <Link href="/requisitions/new" className={buttonVariants({ size: "sm" })}>
+              New Requisition
+            </Link>
+          </div>
         }
       />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard
-          label="Total Expense"
-          value={<Money paise={totalExpensePaise} compact />}
-          href="/purchase-orders"
-          isLoading={loadingPos}
-          trend={expenseTrend}
-        />
-        <StatCard
-          label="Active Order"
-          value={String(activeOrders.length)}
-          href="/purchase-orders"
-          isLoading={loadingPos}
-          trend={activeOrdersTrend}
-        />
-        <StatCard
-          label="Total Vendor"
-          value={String(totalVendors)}
-          href="/purchase-orders"
-          isLoading={loadingPos}
-          trend={null}
-        />
-        <StatCard
-          label="Open For Bids"
-          value={String(openForBids.length)}
-          href="/requisitions"
-          isLoading={loadingAllReqs}
-          trend={openForBidsTrend}
-        />
-      </div>
+      {summaryError ? (
+        <ErrorState error={summaryError} onRetry={() => refetchSummary()} />
+      ) : (
+        <>
+          {/* ── KPI row ────────────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiTile
+              label="Touchless invoices"
+              value={automation?.touchlessRate ?? "—"}
+              basis={automation?.touchlessBasis}
+              note="Invoice-side only. Purchase-order approval is deliberately a human step in this build, so an end-to-end touchless figure would be 0 by construction and would say nothing about the automation. An exception that was raised and later resolved still disqualifies an invoice — a human touched it."
+              href="/invoices"
+              isLoading={isSummaryLoading}
+            />
+            <KpiTile
+              label="First-pass match rate"
+              value={automation?.firstPassMatchRate ?? "—"}
+              basis={
+                automation
+                  ? `${automation.invoicesRequiringReview} paid after human review`
+                  : undefined
+              }
+              note="Three-way matches that came back MATCHED on the first run, over all matches run."
+              isLoading={isSummaryLoading}
+            />
+            <KpiTile
+              label="Open exceptions"
+              value={formatCount(summary?.exceptions.openTotal)}
+              basis={
+                summary?.exceptions.meanResolutionHours != null
+                  ? `${formatDuration(summary.exceptions.meanResolutionHours)} mean to resolve`
+                  : "Nothing resolved yet"
+              }
+              href="/exceptions"
+              isLoading={isSummaryLoading}
+            />
+            <KpiTile
+              label="Committed spend"
+              value={
+                summary ? <Money paise={summary.spend.committed.paise} compact /> : "—"
+              }
+              basis={
+                summary
+                  ? `${summary.spend.paid.display} paid · ${summary.spend.blocked.display} blocked`
+                  : undefined
+              }
+              note="Committed covers every non-rejected purchase order. Blocked is payment held behind an open exception."
+              href="/purchase-orders"
+              isLoading={isSummaryLoading}
+            />
+          </div>
 
-      {/* Recent requisitions */}
+          {/* ── Funnel ─────────────────────────────────────────────────── */}
+          <AnalyticsCard
+            title="Pipeline funnel"
+            caption="Records at each stage, and the status breakdown within the selected one. Generated invoices — the convenience PDFs this system renders from a PO — are excluded server-side; counting them as invoices received would double the funnel."
+            isLoading={isSummaryLoading}
+          >
+            {summary && (
+              <FunnelChart
+                funnel={summary.funnel}
+                stage={funnelStage}
+                onStageChange={setFunnelStage}
+              />
+            )}
+          </AnalyticsCard>
+
+          {/* ── Cycle times ───────────────────────────────────────────── */}
+          <AnalyticsCard
+            title="Cycle times"
+            caption="Median first — procurement durations are skewed, and one requisition left over a weekend drags a mean somewhere no buyer recognises. A flow that has not finished contributes nothing rather than counting as instant, so stages differ in how many completions they are measured over."
+            isLoading={isSummaryLoading}
+            isEmpty={!isSummaryLoading && cycleRows.length === 0}
+            emptyMessage="No flow has completed a stage yet."
+          >
+            {summary && <CycleTimeChart cycleTimes={summary.cycleTimes} />}
+          </AnalyticsCard>
+
+          {/* ── Exceptions + spend ────────────────────────────────────── */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <AnalyticsCard
+              title="Exceptions by type"
+              caption="Open counts both OPEN and UNDER_REVIEW — the split is workflow detail a summary does not need."
+              isLoading={isSummaryLoading}
+              isEmpty={!isSummaryLoading && (summary?.exceptions.byType.length ?? 0) === 0}
+              emptyMessage="No exceptions raised."
+            >
+              {summary && <ExceptionBreakdownChart exceptions={summary.exceptions} />}
+            </AnalyticsCard>
+
+            <AnalyticsCard
+              title="Spend by supplier"
+              caption="Top suppliers by committed value across every non-rejected purchase order."
+              isLoading={isSummaryLoading}
+              isEmpty={!isSummaryLoading && (summary?.spend.topSuppliers.length ?? 0) === 0}
+              emptyMessage="No committed spend yet."
+            >
+              {summary && <SupplierSpendChart topSuppliers={summary.spend.topSuppliers} />}
+            </AnalyticsCard>
+          </div>
+
+          {/* ── Supplier scorecard ────────────────────────────────────── */}
+          <AnalyticsCard
+            title="Supplier scorecard"
+            caption="Reliability carries real weight in supplier selection, so this table shows why the next requisition will pick who it picks. OTIF is on-time × in-full, an approximation — the stored counters do not record which deliveries were both. A supplier that has never delivered shows — rather than 0%."
+            isLoading={isSuppliersLoading}
+          >
+            <SupplierScorecardTable suppliers={suppliers} isLoading={isSuppliersLoading} />
+          </AnalyticsCard>
+
+          {/* ── Anomaly feed ──────────────────────────────────────────── */}
+          <AnalyticsCard
+            title="Anomaly signals"
+            caption="Advisory only — a signal never blocks a payment, raises an exception, or changes a match verdict. These are deterministic statistics over this organization's own history, not a model, and each ships with the sentence that explains it."
+          >
+            <AnomalyFeed
+              signals={anomalies}
+              isLoading={isAnomaliesLoading}
+              severity={severity}
+              onSeverityChange={setSeverity}
+              signalType={signalType}
+              onSignalTypeChange={setSignalType}
+              hasMore={hasMoreAnomalies}
+              onLoadMore={() => fetchMoreAnomalies()}
+              isLoadingMore={isFetchingMoreAnomalies}
+            />
+          </AnalyticsCard>
+
+          {/* ── AI latency ────────────────────────────────────────────── */}
+          {aiRows.length > 0 && (
+            <AnalyticsCard
+              title="AI processing"
+              caption="Per job type. The latency percentiles are what tell you whether the model calls are why the workflow feels slow."
+              isLoading={isSummaryLoading}
+            >
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {aiRows.map((job) => (
+                  <div key={job.jobType}>
+                    <dt className="truncate text-xs text-muted-foreground">{job.label}</dt>
+                    <dd className="mt-0.5 text-sm tabular-nums">
+                      {job.p50} <span className="text-muted-foreground">p50</span>
+                    </dd>
+                    <dd className="text-xs text-muted-foreground tabular-nums">
+                      {job.p95} p95 · {job.successRate} success · {job.runs} runs
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </AnalyticsCard>
+          )}
+        </>
+      )}
+
+      {/* ── Recent requisitions ─────────────────────────────────────── */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Recent Requisitions</h2>
@@ -356,7 +355,7 @@ export default function DashboardPage() {
         />
       </section>
 
-      {/* Open exceptions */}
+      {/* ── Open exceptions ─────────────────────────────────────────── */}
       {(loadingExc || (openExc?.items.length ?? 0) > 0) && (
         <section className="space-y-2">
           <div className="flex items-center justify-between">

@@ -19,6 +19,7 @@ import { RejectPoDialog } from "@/components/purchase-orders/reject-po-dialog";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { getPurchaseOrderPdf } from "@/lib/api/documents";
 import type { PurchaseOrder } from "@/types/models";
+import { EntityAnomalies } from "@/components/analytics/entity-anomalies";
 
 interface PurchaseOrderSectionProps {
   requisitionId: string;
@@ -53,6 +54,11 @@ export function PurchaseOrderSection({
 
   return (
     <div className="space-y-4">
+      {/* Statistical outliers on this order — price, quantity, a first-ever
+          high-value supplier, a predicted late delivery. Advisory context for
+          the approver; never a gate. */}
+      <EntityAnomalies entityType="PurchaseOrder" entityId={purchaseOrder.id} />
+
       {awaitingApproval && (
         <Callout tone="progress">
           <p className="font-medium text-foreground">{PO_APPROVAL_PROMPT}</p>

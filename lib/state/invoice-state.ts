@@ -225,8 +225,12 @@ export function validateGenerateInvoiceOverrides(
     if (trimmed === "") continue;
 
     const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || parsed < 0) {
-      errors[line.purchaseOrderItemId] = "Enter a whole number, 0 or greater.";
+    // The API rejects a zero override (400 VALIDATION_ERROR): a zero-total line
+    // compares equal against anything in three-way matching's UNIT_PRICE check,
+    // so it would pass on no money at all. Every PO line is billed — leaving a
+    // line off the invoice entirely is not supported.
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      errors[line.purchaseOrderItemId] = "Enter a whole number, 1 or greater.";
       continue;
     }
     if (poItem && parsed === poItem.quantity) continue;

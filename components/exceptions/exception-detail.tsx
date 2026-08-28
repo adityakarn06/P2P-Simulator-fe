@@ -13,6 +13,8 @@ import {
   getExceptionEntityHref,
   isInvoiceException,
   isResolvable,
+  isResolvableHere,
+  getExceptionTypeNote,
 } from "@/lib/state/exception-state";
 import { ExceptionChecksTable } from "@/components/exceptions/exception-checks-table";
 import { ExceptionPaymentStatus } from "@/components/exceptions/exception-payment-status";
@@ -20,7 +22,12 @@ import { RelatedExceptions } from "@/components/exceptions/related-exceptions";
 import { ResolveExceptionDialog } from "@/components/exceptions/resolve-exception-dialog";
 import { formatDateTime, formatStatus } from "@/lib/formatters";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, TickDouble01Icon, Cancel01Icon } from "@/lib/icons";
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  TickDouble01Icon,
+  Cancel01Icon,
+} from "@/lib/icons";
 import type { Exception } from "@/types/models";
 
 interface ExceptionDetailProps {
@@ -41,6 +48,7 @@ export function ExceptionDetail({ id }: ExceptionDetailProps) {
 
   const checks = getExceptionChecks(exception);
   const entityHref = getExceptionEntityHref(exception);
+  const typeNote = getExceptionTypeNote(exception.type);
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
@@ -86,10 +94,13 @@ export function ExceptionDetail({ id }: ExceptionDetailProps) {
         </div>
       </div>
 
-      {exception.description && (
+      {(exception.description || typeNote) && (
         <div className="rounded-lg border p-4">
           <p className="text-xs text-muted-foreground mb-1">Description</p>
-          <p className="text-sm">{exception.description}</p>
+          {exception.description && <p className="text-sm">{exception.description}</p>}
+          {typeNote && (
+            <p className="mt-2 text-xs text-muted-foreground">{typeNote}</p>
+          )}
         </div>
       )}
 
@@ -131,6 +142,30 @@ function ExceptionResolutionPanel({ exception }: { exception: Exception }) {
 
   if (releasedForPayment && isInvoiceException(exception)) {
     return <ExceptionPaymentStatus invoiceId={exception.entityId} />;
+  }
+
+  // PO_APPROVAL_REQUIRED is decided on the purchase order, not here — posting
+  // it to /exceptions/:id/resolve is a 409 INVALID_STATE, because closing it
+  // here would leave the order stuck in PENDING_APPROVAL with nothing open
+  // against it. Approving or rejecting the order closes this exception itself.
+  if (isResolvable(exception.status) && !isResolvableHere(exception.type)) {
+    return (
+      <div className="rounded-lg border p-4 text-sm">
+        <p className="mb-1 font-medium">Decide this on the purchase order</p>
+        <p className="text-muted-foreground">
+          This exception is the purchase order&rsquo;s own approval step. Approving or
+          rejecting the order closes it automatically — it cannot be resolved from
+          the exceptions inbox.
+        </p>
+        <Link
+          href={`/purchase-orders/${exception.entityId}`}
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          Open purchase order
+          <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+        </Link>
+      </div>
+    );
   }
 
   if (!isResolvable(exception.status)) {

@@ -194,7 +194,7 @@ describe("validateGenerateInvoiceOverrides", () => {
       poItems
     );
     assert.equal(result.ok, false);
-    if (!result.ok) assert.match(result.errors.poi_1, /0 or greater/i);
+    if (!result.ok) assert.match(result.errors.poi_1, /1 or greater/i);
   });
 
   test("rejects a fractional quantity", () => {
@@ -215,14 +215,26 @@ describe("validateGenerateInvoiceOverrides", () => {
     if (!result.ok) assert.ok(result.errors.poi_1);
   });
 
-  test("accepts a zero quantity as a valid override", () => {
+  // The API rejects a zero override (400 VALIDATION_ERROR): a zero-total line
+  // compares equal against anything in three-way matching's UNIT_PRICE check,
+  // so it would pass on no money at all. Caught client-side instead.
+  test("rejects a zero quantity — the minimum override is 1", () => {
     const result = validateGenerateInvoiceOverrides(
       [{ purchaseOrderItemId: "poi_1", quantity: "0" }],
       poItems
     );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.errors.poi_1, /1 or greater/);
+  });
+
+  test("accepts a quantity of 1", () => {
+    const result = validateGenerateInvoiceOverrides(
+      [{ purchaseOrderItemId: "poi_1", quantity: "1" }],
+      poItems
+    );
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.deepEqual(result.overrides, [{ purchaseOrderItemId: "poi_1", quantity: 0 }]);
+      assert.deepEqual(result.overrides, [{ purchaseOrderItemId: "poi_1", quantity: 1 }]);
     }
   });
 });

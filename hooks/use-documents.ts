@@ -53,9 +53,10 @@ export interface DocumentPreviewState {
  * Owns a single document preview's lifecycle: fetches the blob when opened,
  * holds an object URL only as long as the dialog is open, and revokes it on
  * close and on unmount. Never persists the URL anywhere — CLAUDE.md: never
- * persist signed/temporary file URLs — which is also why this reads through
- * the document endpoints rather than Invoice.fileUrl (a signed, expiring
- * Cloudinary URL).
+ * persist signed/temporary file URLs. The document endpoints are the only way
+ * in: responses carry no document URL at all, so a preview goes through
+ * GET /invoices/:id/pdf (and the PO/receipt equivalents), which streams the
+ * stored bytes through a freshly minted, short-lived link.
  */
 export function useDocumentPreview(fetcher: () => Promise<BinaryResponse>): DocumentPreviewState {
   const [isOpen, setIsOpen] = useState(false);
