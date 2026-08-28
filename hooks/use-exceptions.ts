@@ -8,10 +8,12 @@ import {
   listExceptions,
   getException,
   resolveException,
+  buildResolveBody,
   type ListExceptionsParams,
   type ResolveExceptionBody,
   type ResolveExceptionResponse,
 } from "@/lib/api/exceptions";
+import { paymentKeys } from "@/hooks/use-payments";
 import type { EntityType, Exception } from "@/types/models";
 import { ApiError, type CursorPaginatedData } from "@/types/api";
 import { invoiceKeys } from "@/hooks/use-invoices";
@@ -77,6 +79,10 @@ export interface ResolveExceptionVariables extends ResolveExceptionBody {
  * Both invoiceKeys.detail() and exceptionKeys.detail() are flat keys, not
  * reached by invalidating `.all`/`.lists()`, so each is invalidated
  * explicitly — mirrors invalidateAfterUpload in hooks/use-invoices.ts.
+ *
+ * The payment lists go too: an approval queues an automatic settlement and a
+ * PARTIAL_APPROVE writes a tranche of its own, so any open ledger view is stale
+ * the moment this returns.
  */
 function invalidateAfterResolve(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -91,11 +97,12 @@ function invalidateAfterResolve(
       queryKey: invoiceKeys.detail(variables.entityId),
     });
     queryClient.invalidateQueries({ queryKey: invoiceKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: paymentKeys.lists() });
   }
 }
 
 /**
- * Resolves an exception (APPROVE or REJECT).
+ * Resolves an exception (APPROVE, PARTIAL_APPROVE or REJECT).
  * Disable the UI once exception.status is RESOLVED or REJECTED — re-resolving returns 409.
  *
  * On success:
@@ -118,8 +125,10 @@ export function useResolveException() {
     Error,
     ResolveExceptionVariables
   >({
-    mutationFn: ({ id, decision, reason }) =>
-      resolveException(id, { decision, reason }),
+    // Routed through buildResolveBody so `approvedAmountPaise` is sent for
+    // PARTIAL_APPROVE and omitted otherwise — the backend 400s either mistake.
+    mutationFn: ({ id, decision, reason, approvedAmountPaise }) =>
+      resolveException(id, buildResolveBody({ decision, reason, approvedAmountPaise })),
     onSuccess: (_data, variables) => invalidateAfterResolve(queryClient, variables),
     onError: (error, variables) => {
       if (error instanceof ApiError && error.isConflict) {

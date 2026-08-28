@@ -23,6 +23,8 @@ export { default as CheckmarkCircle02Icon } from "@hugeicons/core-free-icons/Che
 export { default as CommandIcon } from "@hugeicons/core-free-icons/CommandIcon";
 export { default as CpuIcon } from "@hugeicons/core-free-icons/CpuIcon";
 export { default as CreditCardIcon } from "@hugeicons/core-free-icons/CreditCardIcon";
+export { default as Store01Icon } from "@hugeicons/core-free-icons/Store01Icon";
+export { default as Tag01Icon } from "@hugeicons/core-free-icons/Tag01Icon";
 export { default as DashboardSquare01Icon } from "@hugeicons/core-free-icons/DashboardSquare01Icon";
 export { default as Download01Icon } from "@hugeicons/core-free-icons/Download01Icon";
 export { default as EyeIcon } from "@hugeicons/core-free-icons/EyeIcon";

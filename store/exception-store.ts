@@ -24,6 +24,18 @@ interface ExceptionState {
   resolveReasonError: string | null;
   setResolveReasonError: (error: string | null) => void;
 
+  /**
+   * The PARTIAL_APPROVE amount, held as the raw **rupee** string the user is
+   * typing rather than paise. Parsing on every keystroke would fight the user
+   * mid-entry ("20616." is not yet a number); it is converted to integer paise
+   * once, on submit, by parseApprovedAmount in lib/state/exception-state.ts.
+   */
+  approvedAmount: string;
+  setApprovedAmount: (amount: string) => void;
+
+  approvedAmountError: string | null;
+  setApprovedAmountError: (error: string | null) => void;
+
   resetResolveForm: () => void;
 }
 
@@ -43,5 +55,17 @@ export const useExceptionStore = create<ExceptionState>((set) => ({
   resolveReasonError: null,
   setResolveReasonError: (resolveReasonError) => set({ resolveReasonError }),
 
-  resetResolveForm: () => set({ resolveReason: "", resolveReasonError: null }),
+  approvedAmount: "",
+  setApprovedAmount: (approvedAmount) => set({ approvedAmount, approvedAmountError: null }),
+
+  approvedAmountError: null,
+  setApprovedAmountError: (approvedAmountError) => set({ approvedAmountError }),
+
+  resetResolveForm: () =>
+    set({
+      resolveReason: "",
+      resolveReasonError: null,
+      approvedAmount: "",
+      approvedAmountError: null,
+    }),
 }));

@@ -28,6 +28,9 @@ import {
   ActivityIcon,
   CommandIcon,
   Alert01Icon,
+  CreditCardIcon,
+  Store01Icon,
+  Tag01Icon,
 } from "@/lib/icons";
 
 const data = {
@@ -62,6 +65,11 @@ const data = {
       url: "/exceptions",
       icon: <HugeiconsIcon icon={Alert01Icon} strokeWidth={2} />,
     },
+    {
+      title: "Payments",
+      url: "/payments",
+      icon: <HugeiconsIcon icon={CreditCardIcon} strokeWidth={2} />,
+    },
   ],
   documents: [
     {
@@ -73,6 +81,16 @@ const data = {
       name: "Receipts",
       url: "/receipts",
       icon: <HugeiconsIcon icon={ReceiptIcon} strokeWidth={2} />,
+    },
+    {
+      name: "Suppliers",
+      url: "/suppliers",
+      icon: <HugeiconsIcon icon={Store01Icon} strokeWidth={2} />,
+    },
+    {
+      name: "Products",
+      url: "/products",
+      icon: <HugeiconsIcon icon={Tag01Icon} strokeWidth={2} />,
     },
     {
       name: "Activity",

@@ -30,6 +30,15 @@ export type InvoiceStatus =
   | "MATCHING"
   | "APPROVED"
   | "EXCEPTION"
+  /**
+   * Some, but not all, of the invoice has been settled. Reached only through a
+   * human-authorized partial payment (`PARTIAL_APPROVE` on an exception) — the
+   * balance is still owed and the purchase order keeps its remaining
+   * commitment, so a follow-up invoice can still be matched and settled.
+   * See backend-docs/payments-api.md.
+   */
+  | "PARTIALLY_PAID"
+  /** Settled in full. Terminal, success state. */
   | "PAID"
   | "FAILED";
 
@@ -61,8 +70,20 @@ export type ExceptionType =
 
 export type ExceptionSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
-/** The human's verdict when resolving an exception. */
-export type ExceptionDecision = "APPROVE" | "REJECT";
+/**
+ * The human's verdict when resolving an exception.
+ *
+ * - `APPROVE` — the discrepancy is acceptable; settle whatever the invoice
+ *   still owes.
+ * - `PARTIAL_APPROVE` — the short-delivery answer: authorize a specific
+ *   amount (`approvedAmountPaise`, required) rather than the whole invoice.
+ *   The invoice becomes `PARTIALLY_PAID` and the purchase order keeps its
+ *   remaining balance.
+ * - `REJECT` — close the exception without releasing anything.
+ *
+ * See backend-docs/exceptions-api.md, "The three decisions".
+ */
+export type ExceptionDecision = "APPROVE" | "PARTIAL_APPROVE" | "REJECT";
 
 /** Entities audit logs and exceptions can be filed against. */
 export type EntityType =
@@ -439,12 +460,55 @@ export interface Invoice {
   items: InvoiceItem[];
 }
 
-/** One failing check inside a matching exception */
+/**
+ * One failing check inside a matching exception.
+ *
+ * `GET /exceptions/:id` returns these as a top-level `failedChecks` array with
+ * a `severity`; the same rows also appear (without `severity`) under
+ * `metadata.checks`, which is all the list endpoint carries. `severity` is
+ * therefore optional — see getExceptionFailedChecks in lib/state/exception-state.ts.
+ */
 export interface ExceptionMatchCheck {
   checkType: string;
+  /** Raw string — the unit varies by checkType (count, paise, currency code). */
   expected: string;
   actual: string;
+  /** Signed. The API documents no unit, so never append one. */
   variance: number;
+  severity?: ExceptionSeverity;
+}
+
+/**
+ * What settling this exception's invoice would cost, from `GET /exceptions/:id`.
+ * `null` for an exception that is not about an invoice (e.g. NO_SUPPLIER_FOUND).
+ *
+ * All amounts are integer paise. Source: backend-docs/exceptions-api.md.
+ */
+export interface ExceptionSettlement {
+  purchaseOrderId: string;
+  poNumber: string;
+  currency: string;
+  invoiceTotalPaise: number;
+  invoiceSettledPaise: number;
+  invoiceOutstandingPaise: number;
+  purchaseOrderTotalPaise: number;
+  purchaseOrderSettledPaise: number;
+  purchaseOrderOutstandingPaise: number;
+  fullySettled: boolean;
+  /**
+   * The "pay for what actually arrived" figure: accepted units at the
+   * **purchase order's** agreed unit price plus tax at the order's rate —
+   * priced off the PO, not the invoice, so an inflated invoice price is not
+   * inherited. Capped at what the invoice and the order still have outstanding.
+   *
+   * `null` whenever the payment worker would refuse the amount anyway: nothing
+   * received yet, no extracted invoice total, invoice already fully settled, or
+   * purchase order already spent. When it is `null`, offer no one-click amount.
+   *
+   * Advisory: whatever is approved is re-checked against both balances before
+   * any money moves.
+   */
+  suggestedAmountPaise: number | null;
 }
 
 export interface Exception {
@@ -462,6 +526,18 @@ export interface Exception {
     checks?: ExceptionMatchCheck[];
     [key: string]: unknown;
   };
+  /**
+   * The failing MatchCheckResult rows, with severity. Present only on
+   * `GET /exceptions/:id`; `[]` for a non-matching exception, and absent
+   * entirely on rows that came from the list endpoint.
+   */
+  failedChecks?: ExceptionMatchCheck[];
+  /**
+   * The invoice/PO ledger behind this exception. Present only on
+   * `GET /exceptions/:id`, and `null` when the exception is not about an
+   * invoice.
+   */
+  settlement?: ExceptionSettlement | null;
   resolution: ExceptionDecision | null;
   resolutionReason: string | null;
   /** ISO 8601 or null */

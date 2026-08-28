@@ -96,7 +96,10 @@ export function validateInvoiceFile(file: File | null | undefined): InvoiceFileV
  * APPROVED — so both keep polling. EXCEPTION only clears when a human
  * resolves it (see api-docs/exceptions-api.md), which can take a while, so
  * it polls slower rather than at the same 1s cadence as an automatic
- * worker. PAID and FAILED are the real terminal states.
+ * worker. PARTIALLY_PAID is a resting state too, but not a terminal one — the
+ * balance stays owed and a follow-up invoice can settle it — so it is polled at
+ * the slow cadence rather than not at all.
+ * PAID and FAILED are the real terminal states.
  *
  * A GENERATED invoice (backend-docs/documents-api.md) is created straight at
  * EXTRACTED and never enters matching — polling it under the same rule as an
@@ -119,10 +122,20 @@ export function getInvoicePollInterval(
     case "APPROVED":
       return 1000;
     case "EXCEPTION":
+    case "PARTIALLY_PAID":
       return 2000;
     default:
       return false;
   }
+}
+
+/**
+ * True once at least some money has moved. Both PARTIALLY_PAID and PAID qualify
+ * — the difference between them is how much is left, not whether settlement has
+ * begun. See backend-docs/payments-api.md.
+ */
+export function isInvoiceSettling(status: InvoiceStatus): boolean {
+  return status === "PARTIALLY_PAID" || status === "PAID";
 }
 
 /** True while extraction itself is running — spinner + attempt counter. */
@@ -171,6 +184,13 @@ export function getInvoiceStatusMessage(
       };
     case "APPROVED":
       return { title: "Invoice approved. Payment processing.", tone: "success" };
+    case "PARTIALLY_PAID":
+      // Not an error and not a finished job: an approver deliberately paid for
+      // what arrived. Warning tone because a balance is still outstanding.
+      return {
+        title: "Partially paid. An approved amount was settled; a balance is still outstanding.",
+        tone: "warning",
+      };
     case "PAID":
       return { title: "Payment completed.", tone: "success" };
     case "EXCEPTION":

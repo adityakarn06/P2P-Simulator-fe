@@ -33,6 +33,10 @@ function ResolveActions({ exception }: { exception: Exception }) {
     reason,
     setReason,
     reasonError,
+    approvedAmount,
+    setApprovedAmount,
+    approvedAmountError,
+    settlement,
     handleConfirm,
     isPending,
     error,
@@ -56,6 +60,12 @@ function ResolveActions({ exception }: { exception: Exception }) {
 
   return (
     <>
+      {/*
+        Approve and Reject only. PARTIAL_APPROVE needs `settlement` — the
+        invoice/PO balances and the suggested amount — and GET /exceptions
+        does not carry it, so the amount would have nothing to validate
+        against here. It is offered on the detail screen, which fetches it.
+      */}
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <Button
           size="sm"
@@ -86,6 +96,10 @@ function ResolveActions({ exception }: { exception: Exception }) {
           reason={reason}
           onReasonChange={setReason}
           validationError={reasonError}
+          approvedAmount={approvedAmount}
+          onApprovedAmountChange={setApprovedAmount}
+          approvedAmountError={approvedAmountError}
+          settlement={settlement}
           onConfirm={handleConfirm}
           isPending={isPending}
           error={error}

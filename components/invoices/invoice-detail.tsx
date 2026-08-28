@@ -12,6 +12,7 @@ import { useExceptions } from "@/hooks/use-exceptions";
 import { usePurchaseOrder } from "@/hooks/use-purchase-orders";
 import { useShipment } from "@/hooks/use-shipments";
 import { ThreeWayMatchPanel } from "@/components/invoices/three-way-match-panel";
+import { InvoicePaymentsPanel } from "@/components/payments/invoice-payments-panel";
 import { isResolvable } from "@/lib/state/exception-state";
 import {
   getInvoicePollInterval,
@@ -190,6 +191,10 @@ export function InvoiceDetail({ id }: InvoiceDetailProps) {
           />
         </section>
       )}
+
+      {/* Renders nothing until a tranche exists, so an invoice still in
+          extraction is not given an empty payments card. */}
+      <InvoicePaymentsPanel invoiceId={invoice.id} />
     </div>
   );
 }

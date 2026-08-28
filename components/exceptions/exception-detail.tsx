@@ -9,14 +9,18 @@ import { Button } from "@/components/ui/button";
 import { useExceptionDetail } from "@/hooks/use-exception-detail";
 import { useExceptionResolve } from "@/hooks/use-exception-resolve";
 import {
-  getExceptionChecks,
+  getExceptionFailedChecks,
+  getResolutionLabel,
   getExceptionEntityHref,
+  getExceptionSettlement,
   isInvoiceException,
   isResolvable,
   isResolvableHere,
   getExceptionTypeNote,
 } from "@/lib/state/exception-state";
 import { ExceptionChecksTable } from "@/components/exceptions/exception-checks-table";
+import { ExceptionSettlementPanel } from "@/components/exceptions/exception-settlement-panel";
+import { InvoicePaymentsPanel } from "@/components/payments/invoice-payments-panel";
 import { ExceptionPaymentStatus } from "@/components/exceptions/exception-payment-status";
 import { RelatedExceptions } from "@/components/exceptions/related-exceptions";
 import { ResolveExceptionDialog } from "@/components/exceptions/resolve-exception-dialog";
@@ -27,6 +31,7 @@ import {
   ArrowRight01Icon,
   TickDouble01Icon,
   Cancel01Icon,
+  CreditCardIcon,
 } from "@/lib/icons";
 import type { Exception } from "@/types/models";
 
@@ -46,7 +51,8 @@ export function ExceptionDetail({ id }: ExceptionDetailProps) {
     return <ErrorState error={error} onRetry={() => refetch()} className="flex-1" />;
   }
 
-  const checks = getExceptionChecks(exception);
+  const checks = getExceptionFailedChecks(exception);
+  const settlement = getExceptionSettlement(exception);
   const entityHref = getExceptionEntityHref(exception);
   const typeNote = getExceptionTypeNote(exception.type);
 
@@ -111,6 +117,12 @@ export function ExceptionDetail({ id }: ExceptionDetailProps) {
         </div>
       )}
 
+      {settlement && <ExceptionSettlementPanel settlement={settlement} />}
+
+      {isInvoiceException(exception) && (
+        <InvoicePaymentsPanel invoiceId={exception.entityId} />
+      )}
+
       {isInvoiceException(exception) && <RelatedExceptions exceptions={relatedOpenExceptions} />}
 
       <ExceptionResolutionPanel exception={exception} />
@@ -132,6 +144,11 @@ function ExceptionResolutionPanel({ exception }: { exception: Exception }) {
     reason,
     setReason,
     reasonError,
+    approvedAmount,
+    setApprovedAmount,
+    approvedAmountError,
+    settlement,
+    partialAvailable,
     handleConfirm,
     isPending,
     error,
@@ -171,9 +188,7 @@ function ExceptionResolutionPanel({ exception }: { exception: Exception }) {
   if (!isResolvable(exception.status)) {
     return (
       <div className="rounded-lg border p-4 text-sm">
-        <p className="mb-2 font-medium">
-          {exception.resolution === "APPROVE" ? "Approved" : "Rejected"}
-        </p>
+        <p className="mb-2 font-medium">{getResolutionLabel(exception.resolution)}</p>
         {exception.resolutionReason && (
           <p className="text-muted-foreground">{exception.resolutionReason}</p>
         )}
@@ -195,6 +210,12 @@ function ExceptionResolutionPanel({ exception }: { exception: Exception }) {
         <HugeiconsIcon icon={TickDouble01Icon} className="size-4" />
         Approve
       </Button>
+      {partialAvailable && (
+        <Button variant="outline" className="gap-1.5" onClick={() => openDecision("PARTIAL_APPROVE")}>
+          <HugeiconsIcon icon={CreditCardIcon} className="size-4" />
+          Approve partial payment
+        </Button>
+      )}
       <Button
         variant="outline"
         className="gap-1.5 text-red-700 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950"
@@ -213,6 +234,10 @@ function ExceptionResolutionPanel({ exception }: { exception: Exception }) {
           reason={reason}
           onReasonChange={setReason}
           validationError={reasonError}
+          approvedAmount={approvedAmount}
+          onApprovedAmountChange={setApprovedAmount}
+          approvedAmountError={approvedAmountError}
+          settlement={settlement}
           onConfirm={handleConfirm}
           isPending={isPending}
           error={error}

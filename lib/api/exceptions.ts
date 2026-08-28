@@ -19,8 +19,36 @@ export interface ListExceptionsParams {
 
 export interface ResolveExceptionBody {
   decision: ExceptionDecision;
+  /**
+   * Integer paise > 0. **Required** with `PARTIAL_APPROVE` and **rejected**
+   * with anything else — the backend refuses rather than silently ignoring a
+   * number someone typed into a payment request. Callers must omit the key
+   * entirely (not send `null`) for APPROVE/REJECT; `buildResolveBody` below
+   * is the only place that decides this.
+   */
+  approvedAmountPaise?: number;
   /** Required, 10–1000 characters */
   reason: string;
+}
+
+/**
+ * Assembles the request body so `approvedAmountPaise` is present for exactly
+ * one decision. Sending it alongside APPROVE or REJECT is a 400, and omitting
+ * it on PARTIAL_APPROVE is a 400 too, so this must not be inlined at call sites.
+ */
+export function buildResolveBody(input: {
+  decision: ExceptionDecision;
+  reason: string;
+  approvedAmountPaise?: number | null;
+}): ResolveExceptionBody {
+  if (input.decision === "PARTIAL_APPROVE") {
+    return {
+      decision: input.decision,
+      reason: input.reason,
+      approvedAmountPaise: input.approvedAmountPaise ?? undefined,
+    };
+  }
+  return { decision: input.decision, reason: input.reason };
 }
 
 /** GET /exceptions — list response uses `exceptions` key (not `items`) */
@@ -37,10 +65,19 @@ interface ExceptionDetailEnvelope {
 /** POST /exceptions/:id/resolve response */
 export interface ResolveExceptionResponse {
   exception: Exception;
+  /** The amount the backend actually recorded; `null` on a full approval. */
+  approvedAmountPaise: number | null;
   /**
-   * true only when decision=APPROVE AND this was the last open exception on
-   * the invoice. Invoice transitions EXCEPTION → APPROVED and payment is queued.
-   * false for any REJECT, or an APPROVE that left other exceptions open.
+   * true only when the decision was APPROVE or PARTIAL_APPROVE **and** this was
+   * the last exception still open on the invoice. The invoice has moved
+   * EXCEPTION → APPROVED and payment is queued automatically.
+   *
+   * false for any REJECT, or an approval that left other exceptions open — an
+   * invoice can carry several at once (e.g. a quantity *and* a price mismatch),
+   * so a `false` here is not a failure and the remaining open exceptions must
+   * stay visible.
+   *
+   * After a PARTIAL_APPROVE the terminal state is PARTIALLY_PAID, not PAID.
    */
   releasedForPayment: boolean;
 }
@@ -86,9 +123,16 @@ export async function getException(id: string): Promise<Exception> {
 
 /**
  * POST /api/v1/exceptions/:id/resolve
- * Records a human decision (APPROVE or REJECT).
- * An exception is terminal once resolved — calling again returns 409.
- * Disable the resolve UI once status is RESOLVED or REJECTED.
+ * Records a human decision (APPROVE, PARTIAL_APPROVE or REJECT).
+ *
+ * Re-deciding a closed exception is a 409 INVALID_STATE, so the resolve UI must
+ * be gated on the exception's *current* status rather than on the server
+ * rejecting a duplicate. Note that "closed" is not forever: the same failure
+ * recurring reopens the row (RESOLVED → OPEN), so never cache one as
+ * permanently decided.
+ *
+ * `PO_APPROVAL_REQUIRED` is also a 409 here — it is decided on the purchase
+ * order instead. See canResolveException in lib/state/exception-state.ts.
  */
 export async function resolveException(
   id: string,

@@ -74,8 +74,10 @@ interface SupplierScorecardEnvelope {
 
 /**
  * GET /api/v1/analytics/suppliers
- * The vendor scorecard, ordered by reliabilityScore descending. This is the
- * closest thing to a supplier list — GET /suppliers does not exist.
+ * The vendor scorecard, ordered by reliabilityScore descending — performance
+ * only. For the catalog itself (contact details, offers, stock, prices) use
+ * GET /suppliers in lib/api/suppliers.ts; GET /suppliers/:id returns this very
+ * same scorecard row alongside the supplier, rather than recomputing it.
  *
  * Takes no window: the scores are cumulative counters, not period aggregates.
  */

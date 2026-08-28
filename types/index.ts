@@ -54,8 +54,29 @@ export type {
   Invoice,
   // Exception
   ExceptionMatchCheck,
+  ExceptionSettlement,
   Exception,
 } from "./models";
+
+export type {
+  // Payments (settlement tranches)
+  PaymentStatus,
+  PaymentKind,
+  Payment,
+  PaymentLedger,
+  PaymentSibling,
+  PaymentDetail,
+} from "./payments";
+
+export type {
+  // Supplier & product catalog
+  Supplier,
+  Product,
+  SupplierProductOffer,
+  ProductSupplierOffer,
+  SupplierDetail,
+  ProductDetail,
+} from "./catalog";
 
 
 export type {

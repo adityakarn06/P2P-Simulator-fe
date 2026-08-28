@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { PaymentKind, PaymentStatus } from "@/types/payments";
 import type {
   RequisitionStatus,
   PurchaseOrderStatus,
@@ -17,7 +18,9 @@ type AnyStatus =
   | InvoiceStatus
   | ExceptionStatus
   | ExceptionSeverity
-  | GoodsReceiptStatus;
+  | GoodsReceiptStatus
+  | PaymentStatus
+  | PaymentKind;
 
 interface StatusConfig {
   label: string;
@@ -53,17 +56,29 @@ const STATUS_MAP: Record<string, StatusConfig> = {
   MATCHING: { label: "Matching", className: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800" },
   EXCEPTION: { label: "Exception", className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800" },
   PAID: { label: "Paid", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800" },
+  // Deliberately not green: a balance is still owed, and reading it as "done"
+  // is exactly the mistake that leaves a supplier short.
+  PARTIALLY_PAID: { label: "Partially Paid", className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" },
 
   // Exception Status
   OPEN: { label: "Open", className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800" },
   UNDER_REVIEW: { label: "Under Review", className: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800" },
   RESOLVED: { label: "Resolved", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800" },
 
-  // Exception Severity
+  // Exception Severity. WARNING is not in the documented enum but is what the
+  // API actually returns on some rows, so it gets a real style rather than
+  // falling through to the neutral default.
+  WARNING: { label: "Warning", className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" },
   LOW: { label: "Low", className: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700" },
   MEDIUM: { label: "Medium", className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" },
   HIGH: { label: "High", className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800" },
   CRITICAL: { label: "Critical", className: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800" },
+
+  // Payment — PENDING/PROCESSING/COMPLETED/FAILED reuse the entries above.
+  // BLOCKED is not transient: the full-value row matching parked stays BLOCKED
+  // after a partial approval, because that settlement really was refused.
+  BLOCKED: { label: "Blocked", className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800" },
+  FULL: { label: "Full", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800" },
 
   // Goods Receipt
   PENDING: { label: "Pending", className: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700" },

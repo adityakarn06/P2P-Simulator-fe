@@ -7,3 +7,5 @@ export * from "@/store/shipment-store";
 export * from "@/store/receipt-store";
 export * from "@/store/purchase-order-store";
 export * from "@/store/dashboard-store";
+export * from "@/store/payment-store";
+export * from "@/store/catalog-store";

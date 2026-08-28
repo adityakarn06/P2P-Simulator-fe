@@ -1,7 +1,10 @@
 import { z } from "zod";
+import { formatStatus } from "@/lib/formatters";
 import type {
   Exception,
+  ExceptionDecision,
   ExceptionMatchCheck,
+  ExceptionSettlement,
   ExceptionStatus,
   ExceptionType,
 } from "@/types/models";
@@ -115,6 +118,34 @@ export function getExceptionChecks(exception: Pick<Exception, "metadata">): Exce
   return exception.metadata?.checks ?? [];
 }
 
+/**
+ * The failing checks to render, preferring the top-level `failedChecks` that
+ * `GET /exceptions/:id` returns — those carry a per-check `severity`, which
+ * `metadata.checks` does not — and falling back to `metadata.checks` for a row
+ * that came from the list endpoint and has no `failedChecks` at all.
+ *
+ * The fallback is deliberately on *absence*, not emptiness: `failedChecks: []`
+ * is the detail endpoint stating there are none (a NO_SUPPLIER_FOUND row, say),
+ * and quietly substituting `metadata.checks` there would resurrect rows the
+ * backend just said do not apply.
+ */
+export function getExceptionFailedChecks(
+  exception: Pick<Exception, "metadata" | "failedChecks">
+): ExceptionMatchCheck[] {
+  return exception.failedChecks ?? getExceptionChecks(exception);
+}
+
+/**
+ * The invoice/PO settlement ledger, present only on a detail fetch and null for
+ * an exception that is not about an invoice. `undefined` (list row) and `null`
+ * (not an invoice) both mean "nothing to show", so both collapse to null here.
+ */
+export function getExceptionSettlement(
+  exception: Pick<Exception, "settlement">
+): ExceptionSettlement | null {
+  return exception.settlement ?? null;
+}
+
 /** True when the exception blocks an Invoice — gates payment-status polling and the related-exceptions panel. */
 export function isInvoiceException(exception: Pick<Exception, "entityType">): boolean {
   return exception.entityType === "Invoice";
@@ -150,4 +181,160 @@ export function formatCheckVariance(variance: number): string {
   if (variance > 0) return `+${formatted}`;
   if (variance < 0) return `-${formatted}`;
   return formatted;
+}
+
+// ── Partial approval ─────────────────────────────────────────────────────────
+
+/**
+ * The decisions the resolve UI may offer for this exception.
+ *
+ * `PARTIAL_APPROVE` is offered only when the backend has computed a
+ * `suggestedAmountPaise`. That field is null in exactly the cases the payment
+ * worker would refuse an amount anyway — nothing received yet, no extracted
+ * invoice total, invoice already fully settled, purchase order already spent —
+ * so offering the decision there would mean offering a payment that is going to
+ * bounce. It is also unavailable without a settlement block at all, which is
+ * every non-invoice exception.
+ */
+export function getAvailableDecisions(
+  exception: Pick<Exception, "settlement">
+): ExceptionDecision[] {
+  const settlement = getExceptionSettlement(exception);
+  const canPartial = settlement != null && settlement.suggestedAmountPaise != null;
+  return canPartial
+    ? ["APPROVE", "PARTIAL_APPROVE", "REJECT"]
+    : ["APPROVE", "REJECT"];
+}
+
+/** True when the resolve UI should show the partial-approval option. */
+export function canPartialApprove(exception: Pick<Exception, "settlement">): boolean {
+  return getAvailableDecisions(exception).includes("PARTIAL_APPROVE");
+}
+
+/**
+ * The ceiling a partial approval may not exceed: whatever the invoice still
+ * owes *and* whatever commitment the purchase order has left, whichever binds
+ * first. Both caps are enforced server-side before any money moves; this only
+ * keeps the UI from proposing an amount that is certain to be refused.
+ */
+export function getMaxApprovableAmountPaise(settlement: ExceptionSettlement): number {
+  return Math.max(
+    0,
+    Math.min(settlement.invoiceOutstandingPaise, settlement.purchaseOrderOutstandingPaise)
+  );
+}
+
+export type ApprovedAmountResult =
+  | { ok: true; paise: number }
+  | { ok: false; error: string };
+
+/**
+ * Parses and validates the approved-amount field, which users type in **rupees**
+ * while the API takes integer **paise**.
+ *
+ * Rupees are accepted to at most two decimal places and converted with a round,
+ * not a truncation — `Math.round(rupees * 100)` on a value already constrained
+ * to 2dp lands exactly on the intended paise and repairs binary-float dust like
+ * 206169.60 → 20616959.999. Anything finer than a paisa is rejected outright
+ * rather than silently rounded, because silently altering the figure on a
+ * payment request is precisely the mistake this validation exists to prevent.
+ */
+export function parseApprovedAmount(
+  raw: string,
+  settlement: ExceptionSettlement
+): ApprovedAmountResult {
+  const trimmed = raw.trim().replace(/,/g, "");
+  if (trimmed === "") {
+    return { ok: false, error: "Enter the amount to approve." };
+  }
+
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    return {
+      ok: false,
+      error: "Enter an amount in rupees, to at most two decimal places.",
+    };
+  }
+
+  const paise = Math.round(Number(trimmed) * 100);
+  if (!Number.isFinite(paise) || paise <= 0) {
+    return { ok: false, error: "Amount must be greater than zero." };
+  }
+
+  const max = getMaxApprovableAmountPaise(settlement);
+  if (max <= 0) {
+    return {
+      ok: false,
+      error: "Nothing is left to settle on this invoice or purchase order.",
+    };
+  }
+  if (paise > max) {
+    return {
+      ok: false,
+      error: `Amount exceeds what is still outstanding (${formatPaiseInput(max)}).`,
+    };
+  }
+
+  return { ok: true, paise };
+}
+
+/**
+ * Renders integer paise as the plain rupee string the amount input holds —
+ * digits and at most one decimal point, no currency symbol or grouping, so the
+ * value round-trips through `parseApprovedAmount` unchanged. Use the `Money`
+ * component for anything the user only reads.
+ */
+export function formatPaiseInput(paise: number): string {
+  return (paise / 100).toFixed(2);
+}
+
+/**
+ * Toast/banner copy for a completed resolution. `releasedForPayment` is false
+ * whenever other exceptions are still open on the invoice, which is not a
+ * failure and must not read like one.
+ */
+export function getResolutionMessage(
+  decision: ExceptionDecision,
+  releasedForPayment: boolean
+): string {
+  if (decision === "REJECT") return "Exception rejected.";
+  if (!releasedForPayment) {
+    return "Exception approved. The invoice has other open exceptions and is still blocked.";
+  }
+  return decision === "PARTIAL_APPROVE"
+    ? "Partial payment approved. The invoice will settle to Partially Paid."
+    : "Exception approved — payment released.";
+}
+
+/**
+ * Display label for a decided exception's `resolution`.
+ *
+ * Deliberately tolerant of the value's spelling. backend-docs/exceptions-api.md
+ * documents the *request* vocabulary (`APPROVE` / `PARTIAL_APPROVE` / `REJECT`),
+ * but the stored `resolution` comes back in past tense on some rows — live data
+ * carries `APPROVE`, `APPROVED` and `REJECTED` side by side, the past-tense ones
+ * written by the purchase-order approval path rather than by
+ * /exceptions/:id/resolve. A strict lookup renders an empty heading on exactly
+ * the rows a reviewer is auditing, so both spellings map to the same label.
+ *
+ * PARTIAL_APPROVE never collapses into "Approved": the point of that decision is
+ * that the invoice was *not* settled as billed.
+ */
+export function getResolutionLabel(resolution: string | null): string {
+  switch (resolution) {
+    case "PARTIAL_APPROVE":
+    case "PARTIALLY_APPROVED":
+      return "Partial payment approved";
+    case "APPROVE":
+    case "APPROVED":
+      return "Approved";
+    case "REJECT":
+    case "REJECTED":
+      return "Rejected";
+    case null:
+      return "Decided";
+    default:
+      // An unrecognised value is still a decision that was made — show it
+      // rather than a blank heading or a wrong one.
+      return formatStatus(resolution);
+  }
 }
